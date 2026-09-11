@@ -146,7 +146,10 @@ Only `XRA` (X-Ray Activity) type NOAA events are used since those are the only o
 ```bash
 /opt/miniconda3/bin/python coordinates.py
 ```
-Converts each event's derived position (e.g. `S11W04`) to pixel coordinates (`pix_x`, `pix_y`) on a 512x512 solar image using heliographic coordinate transformation:
+Scraping now stores each event's pixel coordinates (`pix_x`, `pix_y`) together
+with its derived position. This command remains available to backfill or repair
+older records. It uses the same heliographic coordinate transformation as the
+scraper:
  
 ```
 HGS (lat/lon degrees)
@@ -164,13 +167,13 @@ First time setup:
 1. Run scraper.py          → builds full historical database (2015 to now)
 2. Run noaa_downloader.py  → downloads NOAA comparison files
 3. Run noaa_matcher.py     → assigns quality flags
-4. Run coordinates.py      → adds pixel coordinates
+4. Run coordinates.py      → backfills pixel coordinates on older records
  
 Daily maintenance:
 1. Run daily_scraper.py    → adds yesterday and today's new events
 2. Run noaa_downloader.py  → downloads any new NOAA files
 3. Run noaa_matcher.py     → updates quality flags
-4. Run coordinates.py      → updates pixel coordinates
+4. No coordinate step      → each scrape upsert refreshes pixel coordinates
 ```
  
 ---

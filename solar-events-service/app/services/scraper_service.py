@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from app.config import settings
 from app.models.event import parse_event_datetime
 from app.repositories.event_repository import EventRepository
+from app.services.coordinates_service import CoordinatesService
 
 
 logger = logging.getLogger(__name__)
@@ -113,15 +114,18 @@ class LmsalScraperService:
         for index, event_id in enumerate(values):
             if not event_id.startswith("gev_") or index + 5 >= len(values):
                 continue
-            events.append(
-                {
-                    "event_id": event_id,
-                    "event_start": values[index + 1],
-                    "event_stop": values[index + 2],
-                    "event_peak": values[index + 3],
-                    "event_GOES": values[index + 4],
-                    "event_position": values[index + 5],
-                    "seen_in_dates": [snapshot_url],
-                }
-            )
+            event_position = values[index + 5]
+            event = {
+                "event_id": event_id,
+                "event_start": values[index + 1],
+                "event_stop": values[index + 2],
+                "event_peak": values[index + 3],
+                "event_GOES": values[index + 4],
+                "event_position": event_position,
+                "seen_in_dates": [snapshot_url],
+            }
+            point = CoordinatesService.position_to_pixel(event_position)
+            if point is not None:
+                event["pix_x"], event["pix_y"] = point
+            events.append(event)
         return events
