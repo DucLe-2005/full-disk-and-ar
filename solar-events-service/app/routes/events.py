@@ -46,7 +46,7 @@ def get_active_regions(
     window_hours: int = Query(24, ge=1, le=168),
     goes_classes: str = "M,X",
 ) -> ActiveRegionsResponseDto:
-    """Return unique NOAA active regions that flare in a prediction window."""
+    """Return regions whose M/X events start and stop in a prediction window."""
     return EventsService().get_active_regions(prediction_timestamp, window_hours, goes_classes)
 
 

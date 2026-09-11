@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { ArtifactImage } from "@/components/dashboard/artifact-image";
+import { CandidateRegionMap } from "@/components/dashboard/candidate-region-map";
 import { RefreshIcon, SunIcon } from "@/components/dashboard/icons";
 import { AttributionMap, Metric, PaginationControls, PredictionCard, PredictionRow, ProbabilityBar } from "@/components/dashboard/prediction-ui";
 import { PAGE_SIZE } from "@/lib/constants";
@@ -442,20 +443,26 @@ export function SolarDashboard() {
                   <section className="visualStage">
                     <div className="sectionHeader">
                       <div>
-                        <span>Candidate Regions</span>
-                        <strong>
+                        <span>
                           {selectedPrediction.actual_flare_overlay_url
-                            ? "Actual M/X flare locations mapped"
-                            : selectedPrediction.actual_events_status === "no_events"
+                            ? "Candidate Region with Actual M/X flare locations mapped"
+                            : "Candidate Regions"}
+                        </span>
+                        {!selectedPrediction.actual_flare_overlay_url && (
+                          <strong>
+                            {selectedPrediction.actual_events_status === "no_events"
                               ? "No actual M/X flares in the next 24 hours"
                               : "Actual flare locations loading"}
-                        </strong>
+                          </strong>
+                        )}
                       </div>
                     </div>
-                    <ArtifactImage
+                    <CandidateRegionMap
                       path={selectedPrediction.actual_flare_overlay_url ?? selectedPrediction.final_hulls_url}
-                      label={selectedPrediction.actual_flare_overlay_url ? "Candidate Regions with Actual Flare Events" : "Candidate Regions"}
-                      sizes="(max-width: 1180px) calc(100vw - 28px), calc((100vw - 374px) / 2)"
+                      label={selectedPrediction.actual_flare_overlay_url
+                        ? "Candidate Region with Actual M/X flare locations mapped"
+                        : "Candidate Regions"}
+                      regions={selectedPrediction.active_regions}
                     />
                   </section>
                 </div>

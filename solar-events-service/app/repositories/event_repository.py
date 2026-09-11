@@ -29,12 +29,13 @@ class EventRepository:
         end: datetime,
         goes_pattern: str,
     ) -> list[dict[str, Any]]:
-        """Return GOES events whose normalized peak is inside ``[start, end)``."""
+        """Return GOES events fully contained inside ``[start, end]``."""
         query = {
-            "event_peak_at": {"$gte": start, "$lt": end},
+            "event_start_at": {"$gte": start, "$lte": end},
+            "event_stop_at": {"$lte": end},
             "event_GOES": {"$regex": goes_pattern, "$options": "i"},
         }
-        return list(self.collection.find(query).sort("event_peak_at", 1))
+        return list(self.collection.find(query).sort("event_start_at", 1))
 
     def upsert_many(self, events: Iterable[dict[str, Any]]) -> int:
         """Normalize and upsert events while merging their LMSAL snapshot URLs.

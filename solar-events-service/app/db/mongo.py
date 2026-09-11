@@ -19,6 +19,7 @@ def get_events_collection() -> Collection:
     collection = client[settings.mongodb_database]["events"]
     collection.create_index([("event_id", ASCENDING)], unique=True, name="event_id_unique")
     collection.create_index([("event_start_at", ASCENDING)], name="event_start_at")
+    collection.create_index([("event_stop_at", ASCENDING)], name="event_stop_at")
     collection.create_index([("event_peak_at", ASCENDING)], name="event_peak_at")
     collection.create_index([("event_GOES", ASCENDING)], name="event_goes")
     return collection

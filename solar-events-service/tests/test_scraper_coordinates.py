@@ -1,5 +1,6 @@
 from app.services.coordinates_service import CoordinatesService
 from app.services.scraper_service import LmsalScraperService
+from app.models.event import to_event_document
 
 
 class FakeResponse:
@@ -32,3 +33,16 @@ def test_scraped_events_include_deterministic_pixel_coordinates(monkeypatch):
     assert (first["pix_x"], first["pix_y"]) == expected
     assert (second["pix_x"], second["pix_y"]) == expected
 
+
+def test_event_stop_after_midnight_is_normalized_to_the_next_day():
+    document = to_event_document(
+        {
+            "event_id": "gev_20260201_2344",
+            "event_start": "2026/02/01 23:44:00",
+            "event_peak": "23:57:00",
+            "event_stop": "00:04:00",
+            "event_GOES": "X8.1",
+        }
+    )
+
+    assert document["event_stop_at"].isoformat() == "2026-02-02T00:04:00+00:00"

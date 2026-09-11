@@ -597,6 +597,95 @@ h1 {
   background: #050505;
 }
 
+.candidateRegionCanvas {
+  position: relative;
+  overflow: hidden;
+  background: #050505;
+}
+
+.candidateRadiusOverlay {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.candidateRadiusCircle {
+  fill: rgb(14 165 233 / 0.08);
+  stroke: #38bdf8;
+  stroke-dasharray: 6 4;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.candidateCenterPoint {
+  fill: #e0f2fe;
+  stroke: #075985;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.candidateRankLabel {
+  fill: #f0f9ff;
+  font-size: 12px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgb(3 20 31 / 0.92);
+  stroke-linejoin: round;
+  stroke-width: 3px;
+}
+
+.radiusControl {
+  display: grid;
+  gap: 9px;
+  padding: 13px 16px 15px;
+  border-top: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.radiusControlLabel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.radiusControlLabel label {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.radiusControlLabel output {
+  min-width: 58px;
+  color: #0369a1;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.radiusControl input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: #0284c7;
+  cursor: ew-resize;
+}
+
+.radiusControl input[type="range"]:focus-visible {
+  outline: 3px solid rgb(14 165 233 / 0.28);
+  outline-offset: 4px;
+}
+
+.radiusControl > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .imagePlaceholder {
   display: grid;
   place-items: center;

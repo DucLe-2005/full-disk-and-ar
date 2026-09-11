@@ -1,6 +1,6 @@
 """Solar-event document model and timestamp normalization."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,9 +52,17 @@ def to_event_document(event: dict[str, Any]) -> dict[str, Any]:
     )
     event_start = document.get("event_start")
     date = event_start.split(" ", 1)[0] if isinstance(event_start, str) else None
-    document["event_start_at"] = parse_event_datetime(event_start)
-    document["event_peak_at"] = parse_event_datetime(document.get("event_peak"), date)
-    document["event_stop_at"] = parse_event_datetime(document.get("event_stop"), date)
+    event_start_at = parse_event_datetime(event_start)
+    event_peak_at = parse_event_datetime(document.get("event_peak"), date)
+    event_stop_at = parse_event_datetime(document.get("event_stop"), date)
+    if event_start_at is not None:
+        if event_peak_at is not None and event_peak_at < event_start_at:
+            event_peak_at += timedelta(days=1)
+        if event_stop_at is not None and event_stop_at < event_start_at:
+            event_stop_at += timedelta(days=1)
+    document["event_start_at"] = event_start_at
+    document["event_peak_at"] = event_peak_at
+    document["event_stop_at"] = event_stop_at
     return document
 
 

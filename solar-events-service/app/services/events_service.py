@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from app.dto.events import ActiveRegionsResponseDto, ActualRegionDto
 from app.models.event import to_event_response
 from app.repositories.event_repository import EventRepository
+from app.services.coordinates_service import CoordinatesService
 
 
 NOAA_ACTIVE_REGION_PATTERN = re.compile(r"\(\s*(\d+)\s*\)")
@@ -72,11 +73,12 @@ class EventsService:
         window_hours: int,
         goes_classes: str,
     ) -> ActiveRegionsResponseDto:
-        """Group M/X events in a prediction window by NOAA active-region number.
+        """Group M/X events fully contained in a prediction window by region.
 
-        Events are selected by normalized peak time. The parenthesized number
-        in ``event_position`` is the grouping key; events without that number
-        cannot be reliably deduplicated and are omitted from this response.
+        Both the event start and stop must fall within the next ``window_hours``.
+        The parenthesized number in ``event_position`` is the grouping key;
+        events without that number cannot be reliably deduplicated and are
+        omitted from this response.
         """
         if prediction_timestamp.tzinfo is None:
             prediction_timestamp = prediction_timestamp.replace(tzinfo=timezone.utc)
@@ -102,13 +104,20 @@ class EventsService:
             if region_id is None:
                 continue
 
+            pix_x = event.get("pix_x")
+            pix_y = event.get("pix_y")
+            if pix_x is None or pix_y is None:
+                point = CoordinatesService.position_to_pixel(position)
+                if point is not None:
+                    pix_x, pix_y = point
+
             region = grouped_regions.setdefault(
                 region_id,
                 ActualRegionDto(
                     region_id=region_id,
                     event_position=position,
-                    pix_x=event.get("pix_x"),
-                    pix_y=event.get("pix_y"),
+                    pix_x=pix_x,
+                    pix_y=pix_y,
                 ),
             )
             region.events.append(to_event_response(event))

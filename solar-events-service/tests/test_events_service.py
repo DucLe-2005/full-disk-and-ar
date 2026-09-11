@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routes import events
+from app.repositories.event_repository import EventRepository
 from app.services.events_service import EventsService
 
 
@@ -43,7 +44,36 @@ def test_active_regions_group_events_by_noaa_region_number():
 
     assert [region.region_id for region in response.regions] == ["4525", "4526"]
     assert response.regions[0].event_position == "S22E79( 4525 )"
+    assert response.regions[0].pix_x is not None
+    assert response.regions[0].pix_y is not None
     assert [event["event_id"] for event in response.regions[0].events] == ["event-1", "event-2"]
+
+
+def test_active_window_requires_start_and_stop_inside_window():
+    class Cursor(list):
+        def sort(self, field, direction):
+            self.sort_args = (field, direction)
+            return self
+
+    class Collection:
+        query = None
+
+        def find(self, query):
+            self.query = query
+            return Cursor()
+
+    collection = Collection()
+    repository = EventRepository(collection)
+    start = datetime(2026, 1, 31, tzinfo=timezone.utc)
+    end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+    repository.find_active_window(start, end, "^(M|X)")
+
+    assert collection.query == {
+        "event_start_at": {"$gte": start, "$lte": end},
+        "event_stop_at": {"$lte": end},
+        "event_GOES": {"$regex": "^(M|X)", "$options": "i"},
+    }
 
 
 def test_list_events_builds_typed_date_and_escaped_class_filters():
