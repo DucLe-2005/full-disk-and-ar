@@ -1,8 +1,9 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from fastapi import HTTPException
 
-from app.api.schemas.prediction import PredictionHistoryPage
+from app.api.schemas.prediction import PredictionHistoryPage, PredictionResponse
 from app.core.dependencies import get_prediction_service
 from app.services.prediction_service import PredictionService
 
@@ -25,3 +26,14 @@ def get_prediction_history(
         end_at=end_time,
         predicted_class=predicted_class,
     )
+
+
+@router.get("/{prediction_id}", response_model=PredictionResponse)
+def get_prediction_detail(
+    prediction_id: str,
+    service: PredictionService = Depends(get_prediction_service),
+) -> PredictionResponse:
+    try:
+        return service.get_prediction_detail(prediction_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error

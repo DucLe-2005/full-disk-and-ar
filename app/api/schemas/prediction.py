@@ -42,6 +42,9 @@ class PredictionResponse(BaseModel):
     deepshap_url: Optional[str] = None
     consensus_url: Optional[str] = None
     final_hulls_url: Optional[str] = None
+    actual_flare_regions: List[dict[str, Any]] = Field(default_factory=list)
+    actual_events_status: Optional[str] = None
+    actual_flare_overlay_url: Optional[str] = None
     active_regions: List[ActiveRegionResponse] = Field(default_factory=list)
     heatmaps: List[HeatmapResponse] = Field(default_factory=list)
     raw_active_regions: List[dict[str, Any]] = Field(default_factory=list)

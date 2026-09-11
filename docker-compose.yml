@@ -17,6 +17,51 @@ services:
       timeout: 5s
       retries: 10
 
+  solar-events-db:
+    image: mongo:latest
+    container_name: solar_events_db
+    restart: unless-stopped
+    command: ["mongod", "--quiet"]
+    environment:
+      # Work around MongoDB's TCMalloc/rseq startup guard on Docker Desktop's
+      # Linux 6.19+ VM kernel. This falls back to per-thread caches.
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+      MONGO_INITDB_DATABASE: ${SOLAR_EVENTS_MONGODB_DATABASE:-solar_events}
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "27017:27017"
+    volumes:
+      - solar_events_db_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/27017; exec 3>&-; exec 3<&-'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  solar-events-api:
+    build:
+      context: .
+      dockerfile: solar-events-service/Dockerfile
+    container_name: solar_events_api
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://solar-events-db:27017
+      MONGODB_DATABASE: ${SOLAR_EVENTS_MONGODB_DATABASE:-solar_events}
+    ports:
+      - "8001:8000"
+    depends_on:
+      solar-events-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   minio:
     image: quay.io/minio/minio:latest
     container_name: flare_minio
@@ -65,6 +110,8 @@ services:
         condition: service_completed_successfully
     env_file:
       - .env
+    environment:
+      SOLAR_EVENTS_SERVICE_URL: ${SOLAR_EVENTS_SERVICE_URL:-http://solar-events-api:8000}
     ports:
       - "8000:8000"
     healthcheck:
@@ -112,3 +159,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  solar_events_db_data:

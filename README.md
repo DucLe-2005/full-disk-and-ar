@@ -83,7 +83,8 @@ prediction/modeling/full_disk/trained_models/
 prediction/modeling/active_region/trained_models/
 ```
 
-Choose one of the following setup paths.
+Choose one of the following setup paths. Run `make help` at any time to see the
+standardized Docker commands.
 
 ### Docker Compose
 
@@ -91,21 +92,44 @@ Create a `.env` file in the repository root using `.env.example` as the
 template, then start the complete stack:
 
 ```sh
-docker compose up --build -d
+make build
+make up
 ```
 
 For Docker-based development with source bind mounts and automatic API and
 frontend reloads, use:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+make up
 ```
 
 Restart the worker after changing its Python source:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.dev.yml restart worker
+make restart SERVICE=worker
 ```
+
+### Production deployment
+
+Publish versioned API, web, and worker images to Docker Hub from a checkout
+where the Git-LFS model files have been downloaded:
+
+```sh
+docker login
+DOCKERHUB_USERNAME=ducleanh IMAGE_TAG=v1.0.0 scripts/publish-images.sh
+```
+
+On the production host, copy `docker-compose.prod.yml` and create `.env` from
+`.env.prod.example`. Set the image tag, replace all example passwords, then
+start the stack without cloning the source code:
+
+```sh
+make prod-pull
+make prod-up
+```
+
+Only the dashboard is published to the host (port `3000` by default). Postgres,
+MinIO, the API, and the worker remain on a private Compose network.
 
 ### Local development
 
@@ -134,44 +158,57 @@ Services:
 - Dashboard: `http://localhost:3000`
 - API: `http://localhost:8000`
 - API health: `http://localhost:8000/health`
+- Solar events API: `http://localhost:8001` (MongoDB-backed; run `make scrape-events` to populate a new database)
+- Solar events MongoDB: `mongodb://localhost:27017`
 - MinIO API: `http://localhost:9000`
 - MinIO console: `http://localhost:9001`
 
 The model weights are mounted read-only into the worker and manual pipeline containers. They are excluded from the Docker build context to keep rebuilds fast.
 
+When the dashboard opens an individual prediction, it requests `GET /history/{prediction_id}`. The API queries the solar-events service for actual M/X flare regions in the following 24 hours and, when locations are available, returns an `actual_flare_overlay_url` with those locations marked on the candidate-region image. Set `SOLAR_EVENTS_SERVICE_URL` to override the default internal Compose URL.
+
 ## Common Commands
 
 ```sh
-# Logs
-docker compose logs -f worker
-docker compose logs -f api
-docker compose logs -f web
+# Create/start or control existing development containers
+make up
+make start
+make stop
+make restart
 
-# Rebuild one service
-docker compose build worker
-docker compose up -d worker
+# Operate on one service
+make restart SERVICE=worker
+make logs SERVICE=api
+make build SERVICE=web
+make rebuild SERVICE=worker
 
-# Stop the stack
-docker compose down
+# Inspect, pull, and validate
+make ps
+make logs
+make pull
+make config
 
-# Stop and delete database/object-store volumes
-docker compose down -v
+# Remove containers, or completely reset containers and volumes
+make down
+make shutdown
 ```
+
+`up` creates missing containers and starts the development stack in the
+background. `start` only starts containers that already exist. `down` preserves
+named volumes; `shutdown` removes volumes and orphan containers as well.
 
 ## Backfill
 
 Queue hourly jobs from `2020-01-01 00:00:00` through `2025-12-31 23:00:00`:
 
 ```sh
-docker compose exec api python -m app.scripts.backfill_predictions
+make backfill
 ```
 
 Custom inclusive range:
 
 ```sh
-docker compose exec api python -m app.scripts.backfill_predictions \
-  --start-time "2020-01-01" \
-  --end-time "2025-12-31"
+make backfill-range START_TIME="2020-01-01" END_TIME="2025-12-31"
 ```
 
 The service skips hours with an existing prediction or an already queued/running job. The worker processes the resulting queue normally.
@@ -292,7 +329,35 @@ Compose uses service hostnames such as `db` and `minio`. Local processes outside
 
 ## Troubleshooting
 
-- Worker failures: `docker compose logs -f worker`
+- Worker failures: `make logs SERVICE=worker`
 - Missing images: verify MinIO at `http://localhost:9000` and `NEXT_PUBLIC_ARTIFACT_BASE_URL=http://localhost:9000/solar-artifacts`.
-- Stale service image: rebuild only that service with `docker compose build <service>`.
-- Clean reset: `docker compose down -v` followed by `docker compose up --build`.
+- Stale service image: rebuild only that service with `make rebuild SERVICE=<service>`.
+- Clean reset: run `make shutdown`, then `make build` and `make up`.
+
+## Tests
+
+Build the isolated test images and run all three suites:
+
+```bash
+make test
+```
+
+To run an individual suite:
+
+```bash
+make test-api
+make test-solar-events
+make test-web
+```
+
+## Continuous Integration
+
+GitHub Actions runs the three Dockerized test suites in parallel for every
+commit pushed to any branch and for every pull request. The workflow can also
+be started manually from the Actions tab. It uses the same `make test-api`,
+`make test-solar-events`, and `make test-web` commands used during development,
+so local and CI behavior stay aligned.
+
+The workflow is defined in `.github/workflows/ci.yml`. It grants read-only
+repository permissions, cancels superseded runs on the same branch or pull
+request, and reports each service suite as a separate required-check candidate.

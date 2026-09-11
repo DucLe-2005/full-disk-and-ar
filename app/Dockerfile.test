@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
+
+COPY requirements/base.txt requirements/base.txt
+COPY requirements/api.txt requirements/api.txt
+COPY requirements/test.txt requirements/test.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements/test.txt
+
+COPY app ./app
+COPY tests ./tests
+
+CMD ["pytest", "tests", "-q"]

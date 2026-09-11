@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str
     default_helioviewer_date: str | None = None
+    solar_events_service_url: str = "http://solar-events-api:8000"
 
     minio_endpoint: str
     minio_access_key: str

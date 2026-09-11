@@ -6,3 +6,4 @@ pydantic-settings
 sqlalchemy
 psycopg[binary]
 uvicorn
+Pillow

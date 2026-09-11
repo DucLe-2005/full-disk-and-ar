@@ -1,4 +1,5 @@
 __pycache__/
+.DS_Store
 *.pyc
 *.pyo
 *.pyd
@@ -11,6 +12,8 @@ node_modules/
 web/.next/
 web/node_modules/
 web/*.log
+solar-events-service/events.json
+solar-events-service/noaa_data/
 data/
 models/
 # The production worker needs the two checkpoints used by the inference pipeline.

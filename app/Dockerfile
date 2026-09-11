@@ -11,6 +11,7 @@ ENV PIP_RETRIES=10
 
 RUN apt-get update && apt-get install -y \
     curl \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/api.txt requirements/api.txt

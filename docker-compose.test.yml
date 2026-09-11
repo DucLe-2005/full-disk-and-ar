@@ -1,0 +1,21 @@
+services:
+  api-test:
+    build:
+      context: .
+      dockerfile: app/Dockerfile.test
+    environment:
+      DATABASE_URL: "sqlite+pysqlite:///:memory:"
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: test-access-key
+      MINIO_SECRET_KEY: test-secret-key
+      MINIO_BUCKET: test-bucket
+
+  solar-events-test:
+    build:
+      context: .
+      dockerfile: solar-events-service/Dockerfile.test
+
+  web-test:
+    build:
+      context: .
+      dockerfile: web/Dockerfile.test

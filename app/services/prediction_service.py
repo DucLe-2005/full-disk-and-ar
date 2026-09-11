@@ -1,4 +1,8 @@
 from datetime import datetime
+import hashlib
+import json
+import logging
+from pathlib import PurePosixPath
 
 from app.api.repositories.prediction_repository import PredictionRepository
 from app.api.schemas.prediction import (
@@ -8,6 +12,20 @@ from app.api.schemas.prediction import (
     PredictionResponse,
 )
 from app.models.prediction import PredictionRecord
+from app.core.config import settings
+from app.core.storage import download_object_bytes, upload_object_bytes
+from app.services.solar_event_overlay import (
+    fetch_actual_flare_regions,
+    render_actual_flare_overlay,
+)
+
+
+# Bump this whenever the actual-flare renderer changes. The version is part of
+# the object name so cached images can never retain an older visual treatment.
+ACTUAL_FLARE_OVERLAY_RENDER_VERSION = "v3"
+
+
+logger = logging.getLogger(__name__)
 
 
 class PredictionService:
@@ -44,6 +62,66 @@ class PredictionService:
         if record is None:
             raise ValueError("No prediction found")
         return self._to_response(record)
+
+    def get_prediction_detail(self, prediction_id: str) -> PredictionResponse:
+        """Return one prediction plus its on-demand actual-flare overlay."""
+        record = self.repo.get_prediction(prediction_id)
+        if record is None:
+            raise ValueError("Prediction not found")
+
+        response = self._to_response(record)
+        actual_regions, status = fetch_actual_flare_regions(
+            settings.solar_events_service_url,
+            record.requested_at,
+        )
+        overlay_path = None
+        if actual_regions and response.final_hulls_url:
+            try:
+                overlay_path = self._create_actual_flare_overlay(
+                    response.final_hulls_url,
+                    actual_regions,
+                )
+            except Exception as error:
+                # A catalog or artifact issue should never make a stored
+                # prediction unavailable to the dashboard.
+                logger.warning("Could not create actual-flare overlay for %s: %s", prediction_id, error)
+                status = "overlay_unavailable"
+
+        return response.model_copy(
+            update={
+                "actual_flare_regions": actual_regions,
+                "actual_events_status": status,
+                "actual_flare_overlay_url": overlay_path,
+            }
+        )
+
+    @staticmethod
+    def _create_actual_flare_overlay(final_hulls_path: str, actual_regions: list[dict]) -> str:
+        source_path = PurePosixPath(final_hulls_path)
+        # Include the current event set in the path. A later detail request can
+        # therefore return a new URL when a live 24-hour window gains events,
+        # rather than being hidden behind a previously cached image.
+        event_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "renderer_version": ACTUAL_FLARE_OVERLAY_RENDER_VERSION,
+                    "regions": actual_regions,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+        overlay_path = str(
+            source_path.with_name(
+                f"{source_path.stem}_actual_flare_events_"
+                f"{ACTUAL_FLARE_OVERLAY_RENDER_VERSION}_{event_fingerprint}.png"
+            )
+        )
+        overlay = render_actual_flare_overlay(
+            download_object_bytes(final_hulls_path),
+            actual_regions,
+        )
+        return upload_object_bytes(overlay, overlay_path, "image/png")
 
     def _to_response(self, record: PredictionRecord) -> PredictionResponse:
         heatmaps_by_method = {

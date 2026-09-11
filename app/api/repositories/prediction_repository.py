@@ -49,6 +49,9 @@ class PredictionRepository:
         )
         return self.db.scalar(stmt)
 
+    def get_prediction(self, prediction_id: str) -> PredictionRecord | None:
+        return self.db.get(PredictionRecord, prediction_id)
+
     def normalize_requested_at(self, requested_at: datetime) -> datetime:
         return requested_at.replace(minute=0, second=0, microsecond=0)
 

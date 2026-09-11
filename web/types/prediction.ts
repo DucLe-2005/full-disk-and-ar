@@ -29,6 +29,9 @@ export type Prediction = {
   deepshap_url?: string | null;
   consensus_url?: string | null;
   final_hulls_url?: string | null;
+  actual_flare_regions?: Record<string, unknown>[];
+  actual_events_status?: "available" | "no_events" | "unavailable" | "overlay_unavailable" | null;
+  actual_flare_overlay_url?: string | null;
   active_regions: ActiveRegion[];
   heatmaps: Heatmap[];
   raw_active_regions: Record<string, unknown>[];

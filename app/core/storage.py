@@ -1,4 +1,5 @@
 import mimetypes
+from io import BytesIO
 from pathlib import Path
 
 from minio import Minio
@@ -36,5 +37,28 @@ def upload_file_to_minio(local_path: str | Path, object_name: str) -> str:
         object_name=object_name,
         file_path=str(local_path),
         content_type=content_type or "application/octet-stream",
+    )
+    return object_name
+
+
+def download_object_bytes(object_name: str) -> bytes:
+    """Read a private artifact from MinIO and release its HTTP connection."""
+    response = get_minio_client().get_object(settings.minio_bucket, object_name)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def upload_object_bytes(data: bytes, object_name: str, content_type: str) -> str:
+    """Store a generated image artifact under a stable object name."""
+    ensure_bucket_exists()
+    get_minio_client().put_object(
+        bucket_name=settings.minio_bucket,
+        object_name=object_name,
+        data=BytesIO(data),
+        length=len(data),
+        content_type=content_type,
     )
     return object_name
