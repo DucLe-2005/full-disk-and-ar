@@ -1,0 +1,6 @@
+httpx
+beautifulsoup4
+fastapi
+uvicorn
+python-multipart
+pymongo==4.10.1

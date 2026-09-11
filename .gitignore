@@ -26,3 +26,13 @@ data/
 Thumbs.db
 .vscode/
 .idea/
+
+# pnpm package store
+/.pnpm-store/
+
+# Local AI assistant instructions
+AGENTS.md
+CLAUDE.md
+
+
+/solar-events-service/noaa_data/
