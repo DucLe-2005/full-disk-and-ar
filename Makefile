@@ -1,8 +1,9 @@
 SHELL := /bin/sh
 
-DEV_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
-TEST_COMPOSE := docker compose -f docker-compose.test.yml
-PROD_COMPOSE := docker compose -f docker-compose.prod.yml
+DOCKER_COMPOSE = docker compose
+DEV_COMPOSE := $(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
+TEST_COMPOSE := $(DOCKER_COMPOSE) -f docker-compose.test.yml
+PROD_COMPOSE := $(DOCKER_COMPOSE) -f docker-compose.prod.yml
 
 SERVICE ?=
 START_TIME ?=
