@@ -451,7 +451,7 @@ export function SolarDashboard() {
                         {!selectedPrediction.actual_flare_overlay_url && (
                           <strong>
                             {selectedPrediction.actual_events_status === "no_events"
-                              ? "No actual M/X flares in the next 24 hours"
+                              ? "No actual M/X flares within one hour of this timestamp"
                               : "Actual flare locations loading"}
                           </strong>
                         )}
@@ -495,7 +495,7 @@ export function SolarDashboard() {
                     <AttributionMap
                       path={attributionPaths?.consensus}
                       title="Fused Attribution Map"
-                      description="Element-wise product"
+                      description="Three-method region consensus"
                     />
                   </div>
                 </section>

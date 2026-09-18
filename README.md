@@ -169,7 +169,7 @@ Services:
 
 The model weights are mounted read-only into the worker and manual pipeline containers. They are excluded from the Docker build context to keep rebuilds fast.
 
-When the dashboard opens an individual prediction, it requests `GET /history/{prediction_id}`. The API queries the solar-events service for actual M/X flare regions in the following 24 hours and, when locations are available, returns an `actual_flare_overlay_url` with those locations marked on the candidate-region image. Set `SOLAR_EVENTS_SERVICE_URL` to override the default internal Compose URL.
+When the dashboard opens an individual prediction, it requests `GET /history/{prediction_id}`. The API queries the solar-events service for actual M/X flare regions from one hour before through one hour after the prediction timestamp and, when locations are available, returns an `actual_flare_overlay_url` with those locations marked on the candidate-region image. Set `SOLAR_EVENTS_SERVICE_URL` to override the default internal Compose URL.
 
 ## Common Commands
 
@@ -278,10 +278,10 @@ The pipeline in `prediction/pipeline/run_pipeline.py`:
 1. Downloads an HMI JP2 and converts it to a full-disk JPG.
 2. Runs the fold-1 full-disk classifier.
 3. Generates Guided Grad-CAM, Integrated Gradients, and DeepLiftShap maps in memory.
-4. Extracts buffered bounding regions from each attribution map, keeps regions
-   that overlap a region from at least one other method, and merges each
-   connected overlap group by spatial union into the consensus map.
-5. Discards regions found by only one attribution method and applies the
+4. Extracts buffered bounding regions from each attribution map, keeps overlap
+   groups represented in all three attribution methods, and merges each group
+   by spatial union into the consensus map.
+5. Discards overlap groups missing any attribution method and applies the
    solar-disk mask to the retained region unions.
 6. Saves the buffered solar mask.
 7. Produces padded fixed-size `512x512` active-region crops.

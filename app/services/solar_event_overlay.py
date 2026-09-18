@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 import json
 import logging
@@ -23,9 +23,15 @@ def fetch_actual_flare_regions(
     prediction_timestamp: datetime,
     timeout_seconds: float = 3.0,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Retrieve M/X flare regions without failing the prediction detail view."""
-    timestamp = prediction_timestamp.isoformat()
-    query = urlencode({"prediction_timestamp": timestamp, "window_hours": 24, "goes_classes": "M,X"})
+    """Retrieve M/X flare regions within one hour of the prediction timestamp."""
+    window_start = prediction_timestamp - timedelta(hours=1)
+    query = urlencode(
+        {
+            "prediction_timestamp": window_start.isoformat(),
+            "window_hours": 2,
+            "goes_classes": "M,X",
+        }
+    )
     url = f"{service_url.rstrip('/')}/active-regions?{query}"
     try:
         with urlopen(url, timeout=timeout_seconds) as response:  # nosec B310: configured service URL

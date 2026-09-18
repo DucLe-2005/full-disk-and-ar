@@ -99,7 +99,7 @@ class PredictionService:
     def _create_actual_flare_overlay(final_hulls_path: str, actual_regions: list[dict]) -> str:
         source_path = PurePosixPath(final_hulls_path)
         # Include the current event set in the path. A later detail request can
-        # therefore return a new URL when a live 24-hour window gains events,
+        # therefore return a new URL when the centered two-hour window gains events,
         # rather than being hidden behind a previously cached image.
         event_fingerprint = hashlib.sha256(
             json.dumps(

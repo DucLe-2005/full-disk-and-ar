@@ -4,7 +4,7 @@ import cv2 as cv
 import numpy as np
 
 
-MIN_OVERLAPPING_METHODS = 2
+MIN_OVERLAPPING_METHODS = 3
 
 
 def _polygon_mask(
