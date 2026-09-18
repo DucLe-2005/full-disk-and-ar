@@ -16,6 +16,10 @@ from prediction.pipeline.stages.attribution import (
     save_raw_map_image,
     to_uint8_grayscale,
 )
+from prediction.pipeline.stages.region_fusion import (
+    MIN_OVERLAPPING_METHODS,
+    fuse_overlapping_regions,
+)
 
 PROPOSAL_IMAGE_SIZE = (512, 512)
 CROP_SIZE_ORIGINAL = 512
@@ -661,6 +665,7 @@ def propose_active_regions(
         save_heatmaps=save_artifacts,
     )
     bounded_maps = {}
+    bounded_polygons_by_method = {}
     bounded_map_paths = {}
     bounded_region_counts = {}
     for method_name in ATTRIBUTION_METHODS:
@@ -668,6 +673,7 @@ def propose_active_regions(
             attribution_result["maps"][method_name]
         )
         bounded_maps[method_name] = bounded_map
+        bounded_polygons_by_method[method_name] = bounded_polygons
         bounded_region_counts[method_name] = len(bounded_polygons)
         if save_artifacts:
             bounded_map_paths[method_name] = str(
@@ -680,10 +686,10 @@ def propose_active_regions(
                 )
             )
 
-    proposal_score_map = (
-        bounded_maps["guided_gradcam"]
-        * bounded_maps["integrated_gradients"]
-        * bounded_maps["deepshap"]
+    proposal_score_map, final_polygons = fuse_overlapping_regions(
+        bounded_maps=bounded_maps,
+        polygons_by_method=bounded_polygons_by_method,
+        min_methods=MIN_OVERLAPPING_METHODS,
     )
     attribution_result["maps"][PROPOSAL_HEATMAP_METHOD] = proposal_score_map
     heatmap_path = None
@@ -693,6 +699,7 @@ def propose_active_regions(
             image_path=image_path,
             output_dir=heatmap_output_dir,
         )
+        attribution_result["map_paths"][PROPOSAL_HEATMAP_METHOD] = str(heatmap_path)
         save_binary_raw_map(
             attr_map=proposal_score_map,
             image_path=image_path,
@@ -705,28 +712,6 @@ def propose_active_regions(
     resized_h, resized_w = PROPOSAL_IMAGE_SIZE
     resized_size_wh = (resized_w, resized_h)
 
-    _, initial_hulls = get_hulls(
-        heatmap_u8=proposal_heatmap_u8,
-        lower_threshold=CANNY_LOWER_THRESHOLD,
-        upper_threshold=CANNY_UPPER_THRESHOLD,
-        min_samples=DBSCAN_MIN_SAMPLES,
-        eps=DBSCAN_EPS,
-    )
-    
-
-    buffered_mask = draw_bounding_region(
-        polygons=initial_hulls,
-        image_shape=proposal_heatmap_u8.shape,
-        nw_angle=-20,
-        sw_angle=20,
-        east_buffer=EAST_BUFFER,
-        west_buffer=WEST_BUFFER,
-    )
-    final_polygons = bounding_hulls(
-        img=buffered_mask,
-        min_samples=2,
-        eps=2,
-    )
     polygon_regions = build_polygon_regions(
         polygons=final_polygons,
         score_map=proposal_score_map,
@@ -772,7 +757,8 @@ def propose_active_regions(
         "regions": final_regions,
         "debug": {
             "proposal_heatmap_method": PROPOSAL_HEATMAP_METHOD,
-            "fusion_method": "element_wise_product_of_bounded_heatmaps",
+            "fusion_method": "union_of_cross_method_overlapping_regions",
+            "minimum_overlapping_methods": MIN_OVERLAPPING_METHODS,
             "attribution_map_paths": attribution_result["map_paths"],
             "bounded_attribution_map_paths": bounded_map_paths,
             "bounded_region_counts": bounded_region_counts,
@@ -792,6 +778,7 @@ __all__ = [
     "crop_box_around_center_xyxy",
     "draw_bounding_region",
     "draw_hulls",
+    "fuse_overlapping_regions",
     "get_hulls",
     "polygon_to_bbox_xyxy",
     "propose_active_regions",

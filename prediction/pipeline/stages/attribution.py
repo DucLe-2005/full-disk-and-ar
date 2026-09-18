@@ -192,12 +192,10 @@ def generate_attribution_maps(
     )
     deepshap_map = deepshap_attr.squeeze(0).detach().cpu().numpy().mean(axis=0)
 
-    consensus_map = gradcam_map * intgrad_map * deepshap_map
     maps = {
         "guided_gradcam": gradcam_map,
         "integrated_gradients": intgrad_map,
         "deepshap": deepshap_map,
-        "consensus": consensus_map,
     }
     
     map_paths = {}
