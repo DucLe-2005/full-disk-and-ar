@@ -1,6 +1,10 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from app.services.coordinates_service import CoordinatesService
 from app.services.scraper_service import LmsalScraperService
 from app.models.event import to_event_document
+import scrape_window
 
 
 class FakeResponse:
@@ -46,3 +50,20 @@ def test_event_stop_after_midnight_is_normalized_to_the_next_day():
     )
 
     assert document["event_stop_at"].isoformat() == "2026-02-02T00:04:00+00:00"
+
+
+def test_event_backfill_includes_every_hour_of_end_date(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        scrape_window,
+        "LmsalScraperService",
+        lambda: SimpleNamespace(scrape_event_window=lambda start, hours: calls.append((start, hours)) or 0),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        ["scrape_window.py", "--start-time", "2025-01-01", "--end-time", "2025-01-10"],
+    )
+
+    scrape_window.main()
+
+    assert calls == [(datetime(2025, 1, 1, tzinfo=timezone.utc), 240)]

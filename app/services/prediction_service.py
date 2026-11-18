@@ -181,6 +181,7 @@ class PredictionService:
                     polygon_resized=region.get("polygon_resized", []),
                     crop_box_original=region.get("crop_box_original"),
                     crop_box_clipped_original=region.get("crop_box_clipped_original"),
+                    crop_box_resized=region.get("crop_box_resized"),
                     crop_padding_ltrb=region.get("crop_padding_ltrb"),
                     proposal_score=region.get("proposal_score"),
                     consensus_score=region.get("consensus_score"),

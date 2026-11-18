@@ -119,6 +119,7 @@ def _build_ar_patches(
                 "polygon_resized": region.get("polygon_resized_xy", []),
                 "crop_box_original": list(region.get("crop_box_original_xyxy", [])),
                 "crop_box_clipped_original": list(region.get("crop_box_clipped_original_xyxy", [])),
+                "crop_box_resized": list(region.get("crop_box_resized_xyxy", [])),
                 "crop_padding_ltrb": list(region.get("crop_padding_ltrb", [])),
                 "proposal_score": region.get("proposal_score"),
                 "consensus_score": region.get("consensus_score"),

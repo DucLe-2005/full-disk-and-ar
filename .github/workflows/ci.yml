@@ -45,3 +45,71 @@ jobs:
       - name: Show Compose diagnostics after failure
         if: failure()
         run: docker compose -f docker-compose.test.yml ps --all
+
+  publish:
+    name: Publish ${{ matrix.service }} image
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: web
+            dockerfile: web/Dockerfile
+          - service: api
+            dockerfile: app/Dockerfile
+          - service: solar-events-api
+            dockerfile: solar-events-service/Dockerfile
+          - service: predictor
+            dockerfile: prediction/Dockerfile
+    env:
+      SERVICE: ${{ matrix.service }}
+      DOCKERFILE: ${{ matrix.dockerfile }}
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          lfs: ${{ matrix.service == 'predictor' }}
+
+      - name: Build release image
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-${SERVICE}:${GITHUB_REF_NAME}"
+          build_args=()
+          if [[ "$SERVICE" == predictor ]]; then
+            build_args+=(--build-arg PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu)
+          fi
+          docker build "${build_args[@]}" \
+            --file "$DOCKERFILE" --tag "$image" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" .
+          printf 'RELEASE_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+
+      - name: Verify embedded model checkpoints
+        if: matrix.service == 'predictor'
+        run: |
+          docker run --rm --entrypoint python "$RELEASE_IMAGE" -c '
+          from pathlib import Path
+          root = Path("prediction/modeling")
+          paths = [
+              root / "full_disk/trained_models/new-fold1.pth",
+              root / "active_region/trained_models/mobilenet/best_loss_ce.pth",
+          ]
+          for path in paths:
+              if path.stat().st_size <= 1024 * 1024:
+                  raise SystemExit(f"Missing checkpoint contents: {path}")
+          '
+
+      - name: Publish release image to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$RELEASE_IMAGE"

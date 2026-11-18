@@ -17,6 +17,7 @@ from app.api.repositories.prediction_repository import PredictionRepository
 from app.core.database import SessionLocal
 from app.core.logging import configure_logging
 from app.core.schema import create_database_schema
+from prediction.pipeline import MagnetogramNotFoundError
 
 logger = logging.getLogger(__name__)
 HOUR = timedelta(hours=1)
@@ -57,6 +58,8 @@ def predict_hour(slot: datetime, *, is_backfill: bool) -> str:
         started = monotonic()
         try:
             yield
+        except MagnetogramNotFoundError:
+            raise
         except Exception:
             logger.error("event=stage_failed slot=%sZ stage=%s", slot.isoformat(), name)
             raise
@@ -98,14 +101,29 @@ def predict_hour(slot: datetime, *, is_backfill: bool) -> str:
 
 
 def run_range(
-    start: datetime, end: datetime, *, live_slot: datetime, attempts: int, retry_delay: int
+    start: datetime,
+    end: datetime,
+    *,
+    live_slot: datetime,
+    attempts: int,
+    retry_delay: int,
+    allow_missing_magnetograms: bool = False,
 ) -> int:
-    counts = {"published": 0, "existing": 0, "failed": 0}
+    counts = {"published": 0, "existing": 0, "magnetogram_unavailable": 0, "failed": 0}
     slot = start
     while slot <= end:
         for attempt in range(1, attempts + 1):
             try:
                 status = predict_hour(slot, is_backfill=slot < live_slot)
+            except MagnetogramNotFoundError as error:
+                logger.warning(
+                    "event=magnetogram_unavailable slot=%sZ attempt=%d attempts=%d reason=%s",
+                    slot.isoformat(), attempt, attempts, error,
+                )
+                if attempt < attempts:
+                    sleep(retry_delay)
+                    continue
+                status = "magnetogram_unavailable"
             except Exception:
                 logger.exception(
                     "event=forecast_attempt_failed slot=%sZ attempt=%d attempts=%d",
@@ -120,7 +138,7 @@ def run_range(
             break
         slot += HOUR
     logger.info("event=forecast_summary counts=%s", counts)
-    return counts["failed"]
+    return counts["failed"] + (0 if allow_missing_magnetograms else counts["magnetogram_unavailable"])
 
 
 def main() -> int:
@@ -132,6 +150,10 @@ def main() -> int:
     parser.add_argument("--end-time", help="Last UTC slot. A date includes its final hour")
     parser.add_argument("--attempts", type=int, default=1)
     parser.add_argument("--retry-delay", type=int, default=60, help="Seconds between retries")
+    parser.add_argument(
+        "--allow-missing-magnetograms", action="store_true",
+        help="Leave slots without an eligible image pending and exit successfully if all other slots succeed",
+    )
     args = parser.parse_args()
     if bool(args.start_time) != bool(args.end_time):
         parser.error("--start-time and --end-time must be provided together")
@@ -148,7 +170,10 @@ def main() -> int:
 
     configure_logging()
     create_database_schema()
-    failures = run_range(start, end, live_slot=now, attempts=args.attempts, retry_delay=args.retry_delay)
+    failures = run_range(
+        start, end, live_slot=now, attempts=args.attempts,
+        retry_delay=args.retry_delay, allow_missing_magnetograms=args.allow_missing_magnetograms,
+    )
     return int(failures > 0)
 
 

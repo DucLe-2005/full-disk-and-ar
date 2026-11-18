@@ -1,0 +1,128 @@
+name: flare-production
+
+x-prediction-environment: &prediction-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-flare_user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-flare_db}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-flare_storage}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+  MINIO_BUCKET: ${MINIO_BUCKET:-solar-artifacts}
+  MINIO_SECURE: "false"
+
+x-prediction-dependencies: &prediction-dependencies
+  db:
+    condition: service_healthy
+  minio:
+    condition: service_healthy
+  createbuckets:
+    condition: service_completed_successfully
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flare_db}
+      POSTGRES_USER: ${POSTGRES_USER:-flare_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  solar-events-db:
+    image: mongo:8
+    restart: unless-stopped
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+    volumes:
+      - solar_events_db_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "if (!db.adminCommand({ping: 1}).ok) quit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: quay.io/minio/minio:latest
+    restart: unless-stopped
+    command: server /data
+    environment: &minio-environment
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-flare_storage}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *minio-environment
+      MINIO_BUCKET: ${MINIO_BUCKET:-solar-artifacts}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        mc anonymous set download "local/$$MINIO_BUCKET"
+
+  solar-events-api:
+    image: ${IMAGE_PREFIX:-ghcr.io/ducle-2005/full-disk-and-ar}-solar-events-api:${IMAGE_TAG:?Set IMAGE_TAG to a published release}
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://solar-events-db:27017
+      MONGODB_DATABASE: ${SOLAR_EVENTS_MONGODB_DATABASE:-solar_events}
+    depends_on:
+      solar-events-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    image: ${IMAGE_PREFIX:-ghcr.io/ducle-2005/full-disk-and-ar}-api:${IMAGE_TAG:?Set IMAGE_TAG to a published release}
+    restart: unless-stopped
+    environment:
+      <<: *prediction-environment
+      SOLAR_EVENTS_SERVICE_URL: http://solar-events-api:8000
+    depends_on: *prediction-dependencies
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/ducle-2005/full-disk-and-ar}-web:${IMAGE_TAG:?Set IMAGE_TAG to a published release}
+    restart: unless-stopped
+    environment:
+      FASTAPI_BASE_URL: http://api:8000
+      MINIO_ARTIFACT_BASE_URL: http://minio:9000/${MINIO_BUCKET:-solar-artifacts}
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  predictor:
+    image: ${IMAGE_PREFIX:-ghcr.io/ducle-2005/full-disk-and-ar}-predictor:${IMAGE_TAG:?Set IMAGE_TAG to a published release}
+    profiles: [forecast]
+    environment: *prediction-environment
+    depends_on: *prediction-dependencies
+
+volumes:
+  postgres_data:
+  minio_data:
+  solar_events_db_data:

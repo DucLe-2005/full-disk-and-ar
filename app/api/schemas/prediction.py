@@ -15,6 +15,7 @@ class ActiveRegionResponse(BaseModel):
     polygon_resized: List[list[int]] = Field(default_factory=list)
     crop_box_original: Optional[list[int]] = None
     crop_box_clipped_original: Optional[list[int]] = None
+    crop_box_resized: Optional[list[int]] = None
     crop_padding_ltrb: Optional[list[int]] = None
     proposal_score: Optional[float] = None
     consensus_score: Optional[float] = None

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import cv2 as cv
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 from sklearn.cluster import DBSCAN
 from scipy.spatial import distance
 
@@ -13,9 +14,9 @@ from prediction.pipeline.stages.attribution import (
     generate_attribution_maps,
     normalize_map,
     save_binary_raw_map,
-    save_raw_map_image,
     to_uint8_grayscale,
 )
+from prediction.pipeline.stages.crop_regions import clip_crop_box_xyxy
 from prediction.pipeline.stages.region_fusion import (
     MIN_OVERLAPPING_METHODS,
     fuse_overlapping_regions,
@@ -444,49 +445,72 @@ def build_polygon_regions(
     return regions
 
 
+def _draw_crop_boxes(
+    image: Image.Image, crop_boxes: Sequence[tuple[int, int, int, int]]
+) -> Image.Image:
+    if not crop_boxes:
+        return image
+    overlay = image.convert("RGB")
+    drawing = ImageDraw.Draw(overlay)
+    for box in crop_boxes:
+        drawing.rectangle(box, outline=(0, 255, 255), width=2)
+    return overlay
+
+
 def save_region_proposal_overlay(
     heatmap_u8: np.ndarray,
     regions: list[dict],
     image_path,
     output_dir: str | Path = "data/heat_maps",
+    *,
+    crop_boxes: Sequence[tuple[int, int, int, int]] = (),
 ) -> Path:
     overlay = cv.cvtColor(heatmap_u8, cv.COLOR_GRAY2BGR)
 
     for region in regions:
         poly = np.array(region["polygon_resized_xy"], dtype=np.int32)
-        bbox = tuple(region["bbox_resized_xyxy"])
         cv.polylines(overlay, [poly], isClosed=True, color=(0, 255, 255), thickness=2)
-        cv.rectangle(
-            overlay,
-            (bbox[0], bbox[1]),
-            (bbox[2], bbox[3]),
-            color=(255, 255, 255),
-            thickness=1,
-        )
 
     image_stem = Path(image_path).stem or "unknown_image"
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     save_path = output_path / f"{image_stem}_final_region_proposal.png"
-    Image.fromarray(cv.cvtColor(overlay, cv.COLOR_BGR2RGB)).save(save_path)
+    _draw_crop_boxes(Image.fromarray(cv.cvtColor(overlay, cv.COLOR_BGR2RGB)), crop_boxes).save(save_path)
     return save_path
+
+
+def _crop_box_on_heatmap(
+    crop_box_original: tuple[int, int, int, int],
+    original_size: tuple[int, int],
+    heatmap_size: tuple[int, int],
+) -> tuple[int, int, int, int]:
+    x1, y1, x2, y2 = clip_crop_box_xyxy(crop_box_original, original_size)
+    original_w, original_h = original_size
+    heatmap_w, heatmap_h = heatmap_size
+    # The extracted crop has exclusive right and bottom bounds. ImageDraw
+    # uses inclusive coordinates, so draw through the last covered pixel.
+    return (
+        x1 * heatmap_w // original_w,
+        y1 * heatmap_h // original_h,
+        (x2 * heatmap_w - 1) // original_w,
+        (y2 * heatmap_h - 1) // original_h,
+    )
 
 
 def save_heatmap_image(
     attr_map: np.ndarray,
     image_path: str | Path,
     output_dir: str | Path,
+    *,
+    crop_boxes: Sequence[tuple[int, int, int, int]] = (),
 ) -> Path:
-    source_path = save_raw_map_image(
-        attr_map=attr_map,
-        image_path=image_path,
-        output_dir=output_dir,
-        name="heatmap",
-    )
+    heatmap = Image.fromarray(to_uint8_grayscale(attr_map))
+
     image_stem = Path(image_path).stem or "unknown_image"
-    target_path = Path(output_dir) / f"{image_stem}_heatmap.png"
-    if Path(source_path) != target_path:
-        Path(source_path).replace(target_path)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    target_path = output_path / f"{image_stem}_heatmap.png"
+    _draw_crop_boxes(heatmap, crop_boxes).save(target_path)
     return target_path
 
 
@@ -494,15 +518,17 @@ def save_final_hulls_image(
     final_hulls_image: np.ndarray,
     image_path: str | Path,
     output_dir: str | Path,
+    *,
+    crop_boxes: Sequence[tuple[int, int, int, int]] = (),
 ) -> Path:
     image_stem = Path(image_path).stem or "unknown_image"
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     save_path = output_path / f"{image_stem}_final_hulls.png"
-    if final_hulls_image.ndim == 2:
-        Image.fromarray(final_hulls_image.astype(np.uint8), mode="L").save(save_path)
-    else:
-        Image.fromarray(cv.cvtColor(final_hulls_image.astype(np.uint8), cv.COLOR_BGR2RGB)).save(save_path)
+    pixels = final_hulls_image.astype(np.uint8)
+    if pixels.ndim != 2:
+        pixels = cv.cvtColor(pixels, cv.COLOR_BGR2RGB)
+    _draw_crop_boxes(Image.fromarray(pixels), crop_boxes).save(save_path)
     return save_path
 
 
@@ -535,6 +561,7 @@ def _build_region_outputs(
             original_size=original_size,
         )
         center_original = bbox_center_xy(bbox_original)
+        crop_box = crop_box_around_center_xyxy(center_original, crop_size=crop_size_original)
         polygon_original = np.stack([
             np.round(polygon_resized[:, 0] * sx).astype(int),
             np.round(polygon_resized[:, 1] * sy).astype(int),
@@ -548,10 +575,8 @@ def _build_region_outputs(
             "polygon_original_xy": polygon_original.tolist(),
             "bbox_original_xyxy": bbox_original,
             "center_original_xy": center_original,
-            "crop_box_original_xyxy": crop_box_around_center_xyxy(
-                center_original,
-                crop_size=crop_size_original,
-            ),
+            "crop_box_original_xyxy": crop_box,
+            "crop_box_resized_xyxy": _crop_box_on_heatmap(crop_box, original_size, resized_size_wh),
             "crop_size": crop_size_original,
             "proposal_score": region["ranking_score"],
             "ranking_score": region["ranking_score"],
@@ -692,23 +717,6 @@ def propose_active_regions(
         min_methods=MIN_OVERLAPPING_METHODS,
     )
     attribution_result["maps"][PROPOSAL_HEATMAP_METHOD] = proposal_score_map
-    heatmap_path = None
-    if save_artifacts:
-        heatmap_path = save_heatmap_image(
-            attr_map=proposal_score_map,
-            image_path=image_path,
-            output_dir=heatmap_output_dir,
-        )
-        attribution_result["map_paths"][PROPOSAL_HEATMAP_METHOD] = str(heatmap_path)
-        save_binary_raw_map(
-            attr_map=proposal_score_map,
-            image_path=image_path,
-            output_dir=heatmap_output_dir,
-            name="heatmap",
-            threshold=BINARY_THRESHOLD,
-        )
-    proposal_heatmap_u8 = to_uint8_grayscale(proposal_score_map)
-
     resized_h, resized_w = PROPOSAL_IMAGE_SIZE
     resized_size_wh = (resized_w, resized_h)
 
@@ -722,9 +730,26 @@ def propose_active_regions(
         resized_size_wh=resized_size_wh,
         crop_size_original=CROP_SIZE_ORIGINAL,
     )
+    heatmap_path = None
     final_hulls_path = None
     proposal_overlay_path = None
     if save_artifacts:
+        crop_boxes = [region["crop_box_resized_xyxy"] for region in final_regions]
+        heatmap_path = save_heatmap_image(
+            attr_map=proposal_score_map,
+            image_path=image_path,
+            output_dir=heatmap_output_dir,
+            crop_boxes=crop_boxes,
+        )
+        attribution_result["map_paths"][PROPOSAL_HEATMAP_METHOD] = str(heatmap_path)
+        save_binary_raw_map(
+            attr_map=proposal_score_map,
+            image_path=image_path,
+            output_dir=heatmap_output_dir,
+            name="heatmap",
+            threshold=BINARY_THRESHOLD,
+        )
+        proposal_heatmap_u8 = to_uint8_grayscale(proposal_score_map)
         final_hulls_image = draw_hulls(
             hulls=final_polygons,
             image_shape=proposal_heatmap_u8.shape,
@@ -745,12 +770,14 @@ def propose_active_regions(
             final_hulls_image=final_hulls_image,
             image_path=image_path,
             output_dir=heatmap_output_dir,
+            crop_boxes=crop_boxes,
         )
         proposal_overlay_path = save_region_proposal_overlay(
             heatmap_u8=proposal_heatmap_u8,
             regions=final_regions,
             image_path=image_path,
             output_dir=heatmap_output_dir,
+            crop_boxes=crop_boxes,
         )
 
     return {

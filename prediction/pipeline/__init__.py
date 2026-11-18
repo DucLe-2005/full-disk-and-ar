@@ -1,1 +1,5 @@
-"""Production prediction stages used by the queue worker."""
+"""Prediction pipeline and shared errors."""
+
+
+class MagnetogramNotFoundError(RuntimeError):
+    """No magnetogram meets the forecast slot's observation window."""

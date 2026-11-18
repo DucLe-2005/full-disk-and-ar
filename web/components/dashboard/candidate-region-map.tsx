@@ -23,7 +23,9 @@ type RegionOverlay = {
 };
 
 function regionOverlay(region: ActiveRegion): RegionOverlay | null {
-  const bounds = region.bbox_resized;
+  const crop = region.crop_box_resized;
+  const hasCropBox = crop?.length === 4 && crop.every(Number.isFinite);
+  const bounds = hasCropBox ? crop : region.bbox_resized;
   if (!bounds || bounds.length !== 4 || !bounds.every(Number.isFinite)) {
     return null;
   }
@@ -35,9 +37,12 @@ function regionOverlay(region: ActiveRegion): RegionOverlay | null {
         .join(" ")
     : null;
 
+  // The raster crop box includes its last pixel. SVG uses the outer edges
+  // of the covered pixels to draw the matching rectangle.
+  const endOffset = hasCropBox ? 1 : 0;
   return {
     rank: region.rank,
-    box: [bounds[0], bounds[1], bounds[2], bounds[3]],
+    box: [bounds[0], bounds[1], bounds[2] + endOffset, bounds[3] + endOffset],
     polygon
   };
 }
@@ -166,7 +171,7 @@ export function CandidateRegionComparison({
         </div>
         <figcaption>
           <strong>Candidate overlay</strong>
-          <span>Select a boundary to inspect its saved region prediction.</span>
+          <span>Select a box to inspect its saved region prediction.</span>
         </figcaption>
       </figure>
     </div>

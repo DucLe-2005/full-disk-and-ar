@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api.repositories.prediction_repository import PredictionRepository
 from app.core import schema
 from prediction import run_forecast
-from prediction.pipeline import persistence
+from prediction.pipeline import MagnetogramNotFoundError, persistence
 
 
 SLOT = datetime(2026, 1, 1, 15)
@@ -96,3 +96,22 @@ def test_schema_adds_forecast_metadata_to_existing_table(monkeypatch):
     }
     with engine.connect() as db:
         assert db.execute(text("SELECT * FROM predictions")).one() == ("old", None, None)
+
+
+@pytest.mark.parametrize(
+    ("error", "allow_missing", "failures"),
+    [
+        (MagnetogramNotFoundError("No eligible image"), True, 0),
+        (MagnetogramNotFoundError("No eligible image"), False, 1),
+        (OSError("Upload failed"), True, 1),
+    ],
+)
+def test_range_can_tolerate_missing_images_only(monkeypatch, error, allow_missing, failures):
+    def predict(_slot, *, is_backfill):
+        raise error
+
+    monkeypatch.setattr(run_forecast, "predict_hour", predict)
+    assert run_forecast.run_range(
+        SLOT, SLOT, live_slot=SLOT, attempts=1, retry_delay=0,
+        allow_missing_magnetograms=allow_missing,
+    ) == failures

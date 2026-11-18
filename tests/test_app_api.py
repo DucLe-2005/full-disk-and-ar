@@ -27,7 +27,7 @@ def prediction_record(**overrides):
         "predicted_class": 1,
         "jp2_object_path": "predictions/1/source.jp2",
         "full_disk_image_path": "predictions/1/full.png",
-        "active_regions": [{"rank": 1, "probability": 0.91}],
+        "active_regions": [{"rank": 1, "probability": 0.91, "crop_box_resized": [32, 64, 95, 127]}],
         "heatmaps": [{"method_name": "Consensus", "image_path": "predictions/1/consensus.png"}],
     }
     values.update(overrides)
@@ -131,6 +131,7 @@ def test_history_endpoint_returns_documented_json_types():
     assert isinstance(item["global_flare_probability"], float)
     assert isinstance(item["localized_probabilities"], list)
     assert isinstance(item["active_regions"][0]["rank"], int)
+    assert item["active_regions"][0]["crop_box_resized"] == [32, 64, 95, 127]
     assert item["requested_at"] == "2026-09-07T13:00:00"
     assert item["observed_at"] == "2026-09-07T12:54:00"
     assert item["is_backfill"] is True

@@ -5,6 +5,7 @@ export type ActiveRegion = {
   image_path?: string | null;
   bbox_original?: number[] | null;
   bbox_resized?: number[] | null;
+  crop_box_resized?: number[] | null;
   center_resized?: number[] | null;
   polygon_resized?: number[][] | null;
 };

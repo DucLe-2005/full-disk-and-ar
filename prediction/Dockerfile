@@ -24,7 +24,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements/api.txt
 
 COPY requirements/pipeline.txt requirements/pipeline.txt
+ARG PYTORCH_INDEX_URL
 RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ -n "${PYTORCH_INDEX_URL:-}" ]; then \
+        pip install --index-url "$PYTORCH_INDEX_URL" torch torchvision; \
+    fi && \
     pip install -r requirements/pipeline.txt
 
 COPY app ./app

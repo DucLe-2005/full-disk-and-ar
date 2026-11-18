@@ -17,6 +17,20 @@ def load_full_disk_grayscale_from_image(image_path: str | Path) -> np.ndarray:
     return np.array(pil_image, dtype=np.uint8)
 
 
+def clip_crop_box_xyxy(
+    box: tuple[int, int, int, int], image_size: tuple[int, int]
+) -> tuple[int, int, int, int]:
+    """Clip half-open crop coordinates to the source image."""
+    width, height = image_size
+    x1, y1, x2, y2 = box
+    return (
+        max(0, min(width, int(x1))),
+        max(0, min(height, int(y1))),
+        max(0, min(width, int(x2))),
+        max(0, min(height, int(y2))),
+    )
+
+
 def crop_and_resize_active_region(
     full_disk_grayscale: np.ndarray,
     bbox_original_xyxy: tuple[int, int, int, int],
@@ -24,12 +38,7 @@ def crop_and_resize_active_region(
     resize_to: tuple[int, int] = (512, 512),
 ) -> dict:
     height, width = full_disk_grayscale.shape
-    x1, y1, x2, y2 = bbox_original_xyxy
-
-    x1 = max(0, min(width, int(x1)))
-    x2 = max(0, min(width, int(x2)))
-    y1 = max(0, min(height, int(y1)))
-    y2 = max(0, min(height, int(y2)))
+    x1, y1, x2, y2 = clip_crop_box_xyxy(bbox_original_xyxy, (width, height))
 
     if x2 <= x1 or y2 <= y1:
         raise ValueError(f"Invalid bounding box after clipping: {(x1, y1, x2, y2)}")
@@ -68,10 +77,9 @@ def crop_square_active_region_with_padding(
     pad_right = max(0, x2 - width)
     pad_bottom = max(0, y2 - height)
 
-    x1_clamped = max(0, x1)
-    y1_clamped = max(0, y1)
-    x2_clamped = min(width, x2)
-    y2_clamped = min(height, y2)
+    x1_clamped, y1_clamped, x2_clamped, y2_clamped = clip_crop_box_xyxy(
+        (x1, y1, x2, y2), (width, height)
+    )
 
     if x2_clamped <= x1_clamped or y2_clamped <= y1_clamped:
         raise ValueError(f"Invalid square crop after clipping: {(x1, y1, x2, y2)}")

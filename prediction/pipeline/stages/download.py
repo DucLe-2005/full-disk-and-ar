@@ -8,14 +8,12 @@ import re
 import cv2
 import requests
 
+from prediction.pipeline import MagnetogramNotFoundError
+
 logger = logging.getLogger(__name__)
 JP2_URL = "https://api.helioviewer.org/v2/getJP2Image/"
 MAX_IMAGE_AGE = datetime.timedelta(minutes=12)
 JPIP_TIMESTAMP = re.compile(r"^(\d{4}_\d{2}_\d{2}__\d{2}_\d{2}_\d{2})(?:_(\d+))?__")
-
-
-class MagnetogramNotFoundError(RuntimeError):
-    pass
 
 
 def _closest_observation(target: datetime.datetime, source_id: int) -> datetime.datetime:

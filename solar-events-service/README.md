@@ -61,14 +61,17 @@ The MongoDB volume persists across container restarts. The service API is
 exposed at `http://localhost:8001`; MongoDB is exposed at
 `mongodb://localhost:27017`.
 
-On startup, the API imports the bundled `events.json` catalog once per MongoDB
-database. The snapshot contains 26,492 observed flare records through
-April 3, 2026, with NOAA active-region IDs and quality flags where available.
-The import preserves existing event records and resumes safely if interrupted.
-For newer events, run the LMSAL scraper inside the API container:
+From the repository root, `make up` fetches the last 24 completed UTC hours of
+LMSAL flare events, including NOAA active-region locations where available.
+`make backfill START_TIME=2026-01-01 END_TIME=2026-01-07` fetches the specified
+range and runs the corresponding forecasts. Both commands upsert events into
+the existing MongoDB collection.
+
+For a standalone event-only range, run:
 
 ```bash
-docker compose exec solar-events-api python scraper.py
+docker compose exec solar-events-api python scrape_window.py \
+  --start-time 2026-01-01 --end-time 2026-01-07
 ```
 
 For development with automatic reload:

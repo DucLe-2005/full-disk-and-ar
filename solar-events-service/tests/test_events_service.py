@@ -4,18 +4,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import main
 from app.routes import events
 from app.repositories.event_repository import EventRepository
 from app.services.events_service import EventsService
-
-
-def test_startup_imports_bundled_event_catalog(monkeypatch):
-    imports = []
-    monkeypatch.setattr(main, "seed_event_catalog", lambda: imports.append("seeded"))
-
-    with TestClient(main.app):
-        assert imports == ["seeded"]
 
 
 class FakeEventRepository:
