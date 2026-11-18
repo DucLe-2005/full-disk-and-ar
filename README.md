@@ -115,9 +115,13 @@ make predict-hour
 ```
 
 If the current magnetogram hasn't arrived yet, try a historical hour with
-`make predict-hour HOUR=2026-09-07T15:00:00Z`. Use `make scrape-events` to
-populate the observed-flare catalog for overlays and see [Backfill](#backfill)
-to populate a range of forecast history.
+`make predict-hour HOUR=2026-09-07T15:00:00Z`. See [Backfill](#backfill) to
+populate a range of forecast history.
+
+On first startup, the solar-events API imports the bundled observed-flare
+catalog into MongoDB, including NOAA region IDs and available quality flags.
+The snapshot ends on April 3, 2026. Run `make scrape-events` to fetch additional
+LMSAL records for overlays.
 
 ### Hourly deployment
 
@@ -181,7 +185,7 @@ Services:
 - Dashboard: `http://localhost:3000`
 - API: `http://localhost:8000`
 - API health: `http://localhost:8000/health`
-- Solar events API: `http://localhost:8001` (MongoDB-backed; run `make scrape-events` to populate a new database)
+- Solar events API: `http://localhost:8001` (MongoDB-backed)
 - Solar events MongoDB: `mongodb://localhost:27017`
 - MinIO API: `http://localhost:9000`
 - MinIO console: `http://localhost:9001`

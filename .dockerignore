@@ -12,7 +12,6 @@ node_modules/
 web/.next/
 web/node_modules/
 web/*.log
-solar-events-service/events.json
 solar-events-service/noaa_data/
 data/
 models/

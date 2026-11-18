@@ -61,9 +61,11 @@ The MongoDB volume persists across container restarts. The service API is
 exposed at `http://localhost:8001`; MongoDB is exposed at
 `mongodb://localhost:27017`.
 
-No JSON migration is performed or needed. A new database starts empty; build
-its event collection directly from LMSAL by running the scraper inside the API
-container:
+On startup, the API imports the bundled `events.json` catalog once per MongoDB
+database. The snapshot contains 26,492 observed flare records through
+April 3, 2026, with NOAA active-region IDs and quality flags where available.
+The import preserves existing event records and resumes safely if interrupted.
+For newer events, run the LMSAL scraper inside the API container:
 
 ```bash
 docker compose exec solar-events-api python scraper.py

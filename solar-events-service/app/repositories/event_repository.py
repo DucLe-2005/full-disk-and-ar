@@ -13,7 +13,7 @@ from app.models.event import to_event_document
 class EventRepository:
     def __init__(self, collection: Optional[Collection] = None) -> None:
         """Use the supplied collection, or connect to the configured events collection."""
-        self.collection = collection or get_events_collection()
+        self.collection = collection if collection is not None else get_events_collection()
 
     def find_many(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """Return matching event documents ordered by their normalized start time."""
@@ -37,11 +37,12 @@ class EventRepository:
         }
         return list(self.collection.find(query).sort("event_start_at", 1))
 
-    def upsert_many(self, events: Iterable[dict[str, Any]]) -> int:
+    def upsert_many(self, events: Iterable[dict[str, Any]], *, insert_only: bool = False) -> int:
         """Normalize and upsert events while merging their LMSAL snapshot URLs.
 
         ``event_id`` is the unique key. Repeated observations update the event
         fields and add new ``seen_in_dates`` values without creating duplicates.
+        An insert-only import leaves previously stored events intact.
         The returned count is the number of valid upsert operations submitted.
         """
         operations = []
@@ -51,8 +52,11 @@ class EventRepository:
             if not event_id:
                 continue
             seen_in_dates = list(dict.fromkeys(document.pop("seen_in_dates", [])))
-            update: dict[str, Any] = {"$set": document}
-            if seen_in_dates:
+            if insert_only:
+                update = {"$setOnInsert": {**document, "seen_in_dates": seen_in_dates}}
+            else:
+                update = {"$set": document}
+            if seen_in_dates and not insert_only:
                 update["$addToSet"] = {"seen_in_dates": {"$each": seen_in_dates}}
             operations.append(UpdateOne({"event_id": event_id}, update, upsert=True))
         if operations:
