@@ -28,7 +28,7 @@ CANNY_UPPER_THRESHOLD = 50
 DBSCAN_MIN_SAMPLES = 2
 DBSCAN_EPS = 10.0
 EAST_BUFFER = 10
-WEST_BUFFER = 60
+WEST_BUFFER = 45
 BINARY_THRESHOLD = 30
 PROPOSAL_HEATMAP_METHOD = "consensus"
 ATTRIBUTION_METHODS = (
@@ -757,7 +757,7 @@ def propose_active_regions(
         "regions": final_regions,
         "debug": {
             "proposal_heatmap_method": PROPOSAL_HEATMAP_METHOD,
-            "fusion_method": "union_of_cross_method_overlapping_regions",
+            "fusion_method": "intersection_of_all_method_regions",
             "minimum_overlapping_methods": MIN_OVERLAPPING_METHODS,
             "attribution_map_paths": attribution_result["map_paths"],
             "bounded_attribution_map_paths": bounded_map_paths,

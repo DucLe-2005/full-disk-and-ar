@@ -1,91 +1,174 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { ArtifactImage } from "@/components/dashboard/artifact-image";
 import type { ActiveRegion } from "@/types/prediction";
 
 const MAP_SIZE = 512;
-const DEFAULT_RADIUS = 48;
 
-type CandidateRegionMapProps = {
-  path?: string | null;
-  label: string;
+type CandidateRegionComparisonProps = {
+  originalPath?: string | null;
+  candidatePath?: string | null;
+  candidateLabel: string;
   regions: ActiveRegion[];
+  selectedRank: number | null;
+  onSelectRegion: (rank: number) => void;
 };
 
-function regionCenter(region: ActiveRegion): [number, number] | null {
-  const center = region.center_resized;
-  if (center?.length === 2 && center.every(Number.isFinite)) {
-    return [center[0], center[1]];
-  }
+type RegionOverlay = {
+  rank: number;
+  box: [number, number, number, number];
+  polygon: string | null;
+};
 
+function regionOverlay(region: ActiveRegion): RegionOverlay | null {
   const bounds = region.bbox_resized;
-  if (bounds?.length === 4 && bounds.every(Number.isFinite)) {
-    return [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2];
+  if (!bounds || bounds.length !== 4 || !bounds.every(Number.isFinite)) {
+    return null;
   }
 
-  return null;
+  const polygon = region.polygon_resized?.length
+    ? region.polygon_resized
+        .filter((point) => point.length === 2 && point.every(Number.isFinite))
+        .map(([x, y]) => `${x},${y}`)
+        .join(" ")
+    : null;
+
+  return {
+    rank: region.rank,
+    box: [bounds[0], bounds[1], bounds[2], bounds[3]],
+    polygon
+  };
 }
 
-export function CandidateRegionMap({ path, label, regions }: CandidateRegionMapProps) {
-  const [radius, setRadius] = useState(DEFAULT_RADIUS);
-  const sliderId = useId();
-  const centers = useMemo(
-    () => regions.flatMap((region) => {
-      const center = regionCenter(region);
-      return center ? [{ center, rank: region.rank }] : [];
-    }),
+export function CandidateRegionComparison({
+  originalPath,
+  candidatePath,
+  candidateLabel,
+  regions,
+  selectedRank,
+  onSelectRegion
+}: CandidateRegionComparisonProps) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
+  const overlays = useMemo(
+    () => regions.flatMap((region) => regionOverlay(region) ?? []),
     [regions]
   );
 
   return (
-    <div className="candidateRegionExplorer">
-      <div className="candidateRegionCanvas">
+    <div className="candidateComparisonGrid">
+      <figure className="candidateComparisonPanel">
         <ArtifactImage
-          path={path}
-          label={label}
-          sizes="(max-width: 1180px) calc(100vw - 28px), calc((100vw - 374px) / 2)"
+          path={originalPath}
+          label="SDO/HMI full-disk line-of-sight magnetogram"
+          sizes="(max-width: 760px) calc(100vw - 52px), 33vw"
+          eager
         />
-        {path && centers.length > 0 ? (
-          <svg
-            aria-hidden="true"
-            className="candidateRadiusOverlay"
-            preserveAspectRatio="xMidYMid meet"
-            viewBox={`0 0 ${MAP_SIZE} ${MAP_SIZE}`}
-          >
-            {centers.map(({ center: [x, y], rank }) => (
-              <g key={`${rank}-${x}-${y}`}>
-                <circle className="candidateRadiusCircle" cx={x} cy={y} r={radius} />
-                <circle className="candidateCenterPoint" cx={x} cy={y} r="3.5" />
-                <text className="candidateRankLabel" x={x} y={y - 8} textAnchor="middle">
-                  {rank}
-                </text>
-              </g>
-            ))}
-          </svg>
-        ) : null}
-      </div>
+        <figcaption>
+          <strong>SDO/HMI full-disk line-of-sight magnetogram</strong>
+        </figcaption>
+      </figure>
 
-      <div className="radiusControl">
-        <div className="radiusControlLabel">
-          <label htmlFor={sliderId}>Proposal radius</label>
-          <output htmlFor={sliderId}>{radius} px</output>
-        </div>
-        <input
-          aria-describedby={`${sliderId}-hint`}
-          id={sliderId}
-          max={256}
-          min={8}
-          onChange={(event) => setRadius(Number(event.target.value))}
-          step={1}
-          type="range"
-          value={radius}
+      <figure className="candidateComparisonPanel">
+        <ArtifactImage
+          path={candidatePath}
+          label={candidateLabel}
+          sizes="(max-width: 760px) calc(100vw - 52px), 33vw"
+          eager
         />
-        <span id={`${sliderId}-hint`}>
-          Expand the circles to compare proposal centers with mapped M/X flare locations.
-        </span>
-      </div>
+        <figcaption>
+          <strong>Final candidate</strong>
+        </figcaption>
+      </figure>
+
+      <figure className="candidateComparisonPanel candidateOverlayPanel">
+        <div
+          className={`candidateRegionCanvas ${isDragging ? "dragging" : ""}`}
+          onWheel={(event) => {
+            const nextZoom = Math.min(4, Math.max(1, zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15)));
+            if (nextZoom !== zoom) event.preventDefault();
+            setZoom(nextZoom);
+            if (nextZoom === 1) setPan({ x: 0, y: 0 });
+          }}
+          onPointerDown={(event) => {
+            if (zoom <= 1) return;
+            if ((event.target as Element).closest(".candidateSelectTarget, .candidateZoomControls")) return;
+            dragStart.current = { pointerX: event.clientX, pointerY: event.clientY, x: pan.x, y: pan.y };
+            setIsDragging(true);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (!dragStart.current) return;
+            const limitX = event.currentTarget.clientWidth * (zoom - 1) / 2;
+            const limitY = event.currentTarget.clientHeight * (zoom - 1) / 2;
+            setPan({
+              x: Math.max(-limitX, Math.min(limitX, dragStart.current.x + event.clientX - dragStart.current.pointerX)),
+              y: Math.max(-limitY, Math.min(limitY, dragStart.current.y + event.clientY - dragStart.current.pointerY))
+            });
+          }}
+          onPointerUp={() => { dragStart.current = null; setIsDragging(false); }}
+          onPointerCancel={() => { dragStart.current = null; setIsDragging(false); }}
+        >
+          <div className="candidateZoomContent" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+          <ArtifactImage
+            path={originalPath}
+            label="Final candidate regions over the SDO/HMI full-disk line-of-sight magnetogram"
+            sizes="(max-width: 760px) calc(100vw - 52px), 33vw"
+            eager
+          />
+          {originalPath && overlays.length > 0 ? (
+            <svg
+              aria-label="Selectable candidate regions"
+              role="group"
+              className="candidateRegionOverlay"
+              preserveAspectRatio="xMidYMid meet"
+              viewBox={`0 0 ${MAP_SIZE} ${MAP_SIZE}`}
+            >
+              {overlays.map(({ rank, box: [x1, y1, x2, y2], polygon }) => (
+                <g key={`${rank}-${x1}-${y1}`} className={selectedRank === rank ? "candidateOverlaySelected" : ""}>
+                  {polygon ? <polygon className="candidateIntersectionPolygon" points={polygon} /> : null}
+                  <rect
+                    aria-label={`Select candidate region ${rank}`}
+                    aria-pressed={selectedRank === rank}
+                    className="candidateBoundingBox candidateSelectTarget"
+                    height={Math.max(1, y2 - y1)}
+                    width={Math.max(1, x2 - x1)}
+                    x={x1}
+                    y={y1}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelectRegion(rank)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectRegion(rank);
+                      }
+                    }}
+                  />
+                  <g className={`candidateBoxLabel ${selectedRank === rank ? "selected" : ""}`} transform={`translate(${x1}, ${Math.max(0, y1 - 20)})`}>
+                    <rect height="20" rx="4" width="28" />
+                    <text x="14" y="14" textAnchor="middle">{rank}</text>
+                  </g>
+                </g>
+              ))}
+            </svg>
+          ) : null}
+          </div>
+          <div className="candidateZoomControls" aria-label="Magnetogram zoom controls">
+            <button type="button" aria-label="Zoom in" onClick={() => setZoom((current) => Math.min(4, current * 1.25))}>+</button>
+            <button type="button" aria-label="Zoom out" onClick={() => { const nextZoom = Math.max(1, zoom / 1.25); setZoom(nextZoom); if (nextZoom === 1) setPan({ x: 0, y: 0 }); }}>−</button>
+            <button type="button" aria-label="Reset zoom and pan" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Reset</button>
+          </div>
+        </div>
+        <figcaption>
+          <strong>Candidate overlay</strong>
+          <span>Select a boundary to inspect its saved region prediction.</span>
+        </figcaption>
+      </figure>
     </div>
   );
 }

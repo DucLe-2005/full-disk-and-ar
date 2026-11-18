@@ -1,18 +1,27 @@
+from functools import cache
+
 import torch
 from PIL import Image
 from torchvision.transforms import Compose, Resize, ToTensor
 
+from prediction.modeling.device import select_inference_device
 from prediction.modeling.full_disk.ensemble import (
     load_full_disk_model,
 )
 
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
+device = select_inference_device()
 
 transformations = Compose([
     Resize((512, 512)),
     ToTensor()
 ])
+
+
+@cache
+def _get_full_disk_model():
+    """Load the model on first use and retain it for the worker process."""
+    return load_full_disk_model(device=device)
+
 
 def predict_full_disk(
     image_path,
@@ -33,7 +42,7 @@ def predict_full_disk(
     with Image.open(image_path) as image:
         image_tensor = transform(image.convert("L")).unsqueeze(0).to(device)
 
-    model = load_full_disk_model(device=device)
+    model = _get_full_disk_model()
     with torch.no_grad():
         probabilities = torch.softmax(model(image_tensor), dim=1)
         non_flare_prob = probabilities[0, 0].item()

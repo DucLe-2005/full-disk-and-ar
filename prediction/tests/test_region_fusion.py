@@ -37,7 +37,7 @@ def test_fusion_discards_overlap_when_only_two_methods_agree():
     assert not np.any(fused_map)
 
 
-def test_fusion_merges_transitive_overlap_across_three_methods():
+def test_fusion_discards_transitive_overlap_without_shared_three_way_area():
     shape = (40, 40)
     method_a = [rectangle(2, 10, 10, 18)]
     method_b = [rectangle(8, 10, 16, 18)]
@@ -52,13 +52,11 @@ def test_fusion_merges_transitive_overlap_across_three_methods():
         polygons_by_method={"a": method_a, "b": method_b, "c": method_c},
     )
 
-    assert len(merged_polygons) == 1
-    assert fused_map[14, 3] == pytest.approx(0.3)
-    assert fused_map[14, 11] == pytest.approx(0.6)
-    assert fused_map[14, 21] == pytest.approx(0.9)
+    assert merged_polygons == []
+    assert not np.any(fused_map)
 
 
-def test_fusion_merges_direct_overlap_from_all_three_methods():
+def test_fusion_keeps_only_the_shared_area_from_all_three_methods():
     shape = (30, 30)
     method_a = [rectangle(2, 2, 12, 12)]
     method_b = [rectangle(7, 5, 17, 15)]
@@ -74,7 +72,10 @@ def test_fusion_merges_direct_overlap_from_all_three_methods():
     )
 
     assert len(merged_polygons) == 1
+    assert tuple(cv.boundingRect(merged_polygons[0])) == (9, 8, 4, 5)
     assert fused_map[10, 10] == pytest.approx(0.6)
+    assert fused_map[6, 8] == 0.0
+    assert fused_map[14, 15] == 0.0
 
 
 def test_fusion_returns_empty_output_when_no_methods_overlap():

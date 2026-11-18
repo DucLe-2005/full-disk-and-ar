@@ -19,6 +19,8 @@ def prediction_record(**overrides):
     values = {
         "id": "prediction-1",
         "requested_at": REQUESTED_AT,
+        "observed_at": datetime(2026, 9, 7, 12, 54),
+        "is_backfill": True,
         "created_at": datetime(2026, 9, 7, 13, 2, 3),
         "global_flare_probability": 0.875,
         "localized_probabilities": [0.91],
@@ -129,6 +131,16 @@ def test_history_endpoint_returns_documented_json_types():
     assert isinstance(item["global_flare_probability"], float)
     assert isinstance(item["localized_probabilities"], list)
     assert isinstance(item["active_regions"][0]["rank"], int)
+    assert item["requested_at"] == "2026-09-07T13:00:00"
+    assert item["observed_at"] == "2026-09-07T12:54:00"
+    assert item["is_backfill"] is True
+
+
+@pytest.mark.parametrize(
+    ("url", "status"), [("/predictions/jobs", 404), ("/predictions/jobs/range", 405)]
+)
+def test_prediction_job_submission_is_disabled(url, status):
+    assert api_client().post(url, json={}).status_code == status
 
 
 def test_history_endpoint_validates_query_and_returns_404_for_missing_detail():

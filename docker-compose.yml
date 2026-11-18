@@ -137,12 +137,11 @@ services:
     ports:
       - "3000:3000"
 
-  worker:
+  predictor:
     build:
       context: .
       dockerfile: prediction/Dockerfile
-    container_name: flare_worker
-    restart: unless-stopped
+    profiles: [forecast]
     depends_on:
       db:
         condition: service_healthy

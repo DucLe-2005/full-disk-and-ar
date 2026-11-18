@@ -3,15 +3,62 @@ from __future__ import annotations
 import datetime
 import logging
 from pathlib import Path
+import re
 
 import cv2
 import requests
 
 logger = logging.getLogger(__name__)
+JP2_URL = "https://api.helioviewer.org/v2/getJP2Image/"
+MAX_IMAGE_AGE = datetime.timedelta(minutes=12)
+JPIP_TIMESTAMP = re.compile(r"^(\d{4}_\d{2}_\d{2}__\d{2}_\d{2}_\d{2})(?:_(\d+))?__")
 
 
 class MagnetogramNotFoundError(RuntimeError):
     pass
+
+
+def _closest_observation(target: datetime.datetime, source_id: int) -> datetime.datetime:
+    response = requests.get(
+        JP2_URL,
+        params={"date": f"{target.isoformat()}Z", "sourceId": source_id, "jpip": "true"},
+        timeout=60,
+    )
+    response.raise_for_status()
+    match = JPIP_TIMESTAMP.match(response.content.decode().strip().rsplit("/", 1)[-1])
+    if match is None:
+        raise RuntimeError(f"Invalid Helioviewer JPIP response for {target.isoformat()}Z")
+    timestamp, fraction = match.groups()
+    observed_at = datetime.datetime.strptime(timestamp, "%Y_%m_%d__%H_%M_%S")
+    return observed_at.replace(microsecond=int((fraction or "").ljust(6, "0")[:6]))
+
+
+def _download_image(observed_at: datetime.datetime, source_id: int, file_path: Path) -> None:
+    response = requests.get(
+        JP2_URL,
+        params={"date": f"{observed_at.isoformat()}Z", "sourceId": source_id},
+        timeout=120,
+    )
+    response.raise_for_status()
+    file_path.write_bytes(response.content)
+
+
+def download_forecast_magnetogram(
+    slot: datetime.datetime, destination: Path, source_id: int = 19
+) -> tuple[Path, datetime.datetime]:
+    """Download an HMI observation at or within 12 minutes before the UTC slot."""
+    observed_at = _closest_observation(slot, source_id)
+    if observed_at > slot:
+        # At the midpoint of the allowed window, any eligible observation
+        # is at least as close as an observation outside that window.
+        observed_at = _closest_observation(slot - MAX_IMAGE_AGE / 2, source_id)
+    if not slot - MAX_IMAGE_AGE <= observed_at <= slot:
+        raise MagnetogramNotFoundError(
+            f"No magnetogram in the 12 minutes through {slot.isoformat()}Z"
+        )
+    file_path = destination / f"HMI.m{slot:%Y.%m.%d_%H.%M.%S}.jp2"
+    _download_image(observed_at, source_id, file_path)
+    return file_path, observed_at
 
 
 def _prediction_exists_for_requested_at(requested_at: datetime.datetime) -> bool:

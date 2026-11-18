@@ -10,6 +10,8 @@ COPY requirements/test.txt requirements/test.txt
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements/test.txt
 
 COPY app ./app
+COPY prediction/__init__.py prediction/run_forecast.py ./prediction/
+COPY prediction/pipeline/__init__.py prediction/pipeline/persistence.py ./prediction/pipeline/
 COPY tests ./tests
 
 CMD ["pytest", "tests", "-q"]

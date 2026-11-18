@@ -2,10 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GET as getArtifact } from "./artifacts/route";
 import { GET as getHistory } from "./history/route";
-import { POST as postCurrentHour } from "./jobs/current-hour/route";
+import { GET as getJobStatus } from "./jobs/[jobId]/route";
 
 afterEach(() => {
-  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -50,26 +49,32 @@ describe("web route handlers", () => {
     expect(await response.json()).toEqual(payload);
   });
 
-  it("creates a job for the current UTC hour with a stable string shape", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-09-07T13:42:51Z"));
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ job_id: "job-1", status: "queued" }))
-      )
-    );
+  it("returns job stage and timing data without caching", async () => {
+    const jobId = "ea37c987-ffb6-4a9d-93cb-5965cf84b6ae";
+    const payload = { status: "running", current_stage: "full_disk", queue_wait_seconds: 12 };
+    const fetchStatus = vi.fn().mockResolvedValue(Response.json(payload));
+    vi.stubGlobal("fetch", fetchStatus);
 
-    const response = await postCurrentHour();
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toEqual({
-      job_id: "job-1",
-      status: "queued",
-      helioviewer_date: "2026-09-07 13:00:00"
+    const result = await getJobStatus(new Request(`http://localhost/api/jobs/${jobId}`), {
+      params: Promise.resolve({ jobId })
     });
-    expect(typeof body.job_id).toBe("string");
-    expect(typeof body.helioviewer_date).toBe("string");
+    expect(result.headers.get("cache-control")).toBe("no-store");
+    expect(await result.json()).toEqual(payload);
+    expect(fetchStatus).toHaveBeenCalledWith(
+      expect.stringContaining(`/predictions/jobs/${jobId}`),
+      expect.objectContaining({ cache: "no-store" })
+    );
   });
+
+  it.each([[404, 404], [503, 502]])(
+    "maps upstream job status %s to %s",
+    async (upstreamStatus, expectedStatus) => {
+      const jobId = "ea37c987-ffb6-4a9d-93cb-5965cf84b6ae";
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: upstreamStatus })));
+      const result = await getJobStatus(new Request(`http://localhost/api/jobs/${jobId}`), {
+        params: Promise.resolve({ jobId })
+      });
+      expect(result.status).toBe(expectedStatus);
+    }
+  );
 });

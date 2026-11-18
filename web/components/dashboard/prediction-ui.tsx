@@ -3,8 +3,8 @@ import { formatDateTime, formatTime, percent, predictionTone } from "@/lib/forma
 import type { Prediction } from "@/types/prediction";
 import { ArtifactImage } from "./artifact-image";
 
-export function AttributionMap({ path, title, description, featured = false }: { path?: string | null; title: string; description: string; featured?: boolean }) {
-  return <figure className={`attributionMap ${featured ? "featured" : ""}`}><ArtifactImage path={path} label={`${title} attribution map`} sizes="(max-width: 760px) calc(100vw - 56px), (max-width: 1180px) 45vw, 22vw" /><figcaption><strong>{title}</strong><span>{description}</span></figcaption></figure>;
+export function AttributionMap({ path, title, description, featured = false }: { path?: string | null; title: string; description?: string; featured?: boolean }) {
+  return <figure className={`attributionMap ${featured ? "featured" : ""}`}><ArtifactImage path={path} label={`${title} attribution map`} sizes="(max-width: 760px) calc(100vw - 56px), (max-width: 1180px) 45vw, 22vw" /><figcaption><strong>{title}</strong>{description ? <span>{description}</span> : null}</figcaption></figure>;
 }
 
 export function ProbabilityBar({ value, tone = "flare" }: { value: number; tone?: "flare" | "quiet" }) {

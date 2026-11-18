@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from prediction.pipeline.stages.crop_regions import crop_proposed_active_regions_from_image
-from prediction.pipeline.stages.download import download_from_helioviewer, jp2_to_jpg_conversion
+from prediction.pipeline.stages.download import download_forecast_magnetogram, jp2_to_jpg_conversion
 from prediction.pipeline.stages.ar_predict import predict_ar_models_for_regions
 from prediction.pipeline.stages.region_proposal import PROPOSAL_IMAGE_SIZE, propose_active_regions
 from prediction.pipeline.stages.full_disk_predict import predict_full_disk
@@ -17,7 +19,12 @@ AR_MODEL_NAMES = ["mobilenet"]
 AR_THRESHOLD = 0.5
 
 
-def run_pipeline(date: str) -> dict:
+def run_pipeline(
+    date: str,
+    *,
+    stage: Callable[[str], AbstractContextManager] = lambda _name: nullcontext(),
+    data_root: Path = DATA_ROOT,
+) -> dict:
     logger.info("Starting solar flare pipeline for %s", date)
     if not date:
         raise ValueError("date is required")
@@ -26,7 +33,7 @@ def run_pipeline(date: str) -> dict:
         date.strip().replace("T", " ").replace("Z", ""),
         "%Y-%m-%d %H:%M:%S",
     )
-    artifact_base_dir = DATA_ROOT / f"{dt.year}" / f"{dt.month:02d}" / f"{dt.day:02d}"
+    artifact_base_dir = data_root / f"{dt.year}" / f"{dt.month:02d}" / f"{dt.day:02d}"
     jp2_dir = artifact_base_dir / "jp2"
     full_disk_dir = artifact_base_dir / "full_disk"
     heatmap_dir = artifact_base_dir / "heat_maps"
@@ -34,37 +41,38 @@ def run_pipeline(date: str) -> dict:
     for artifact_dir in (jp2_dir, full_disk_dir, active_regions_dir):
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    jp2_path = download_from_helioviewer(
-        date=date,
-        basedir=DATA_ROOT,
-    )
-    jpg_path = jp2_to_jpg_conversion(
-        jp2_path=jp2_path,
-        destination=full_disk_dir,
-        resize=False,
-    )
+    with stage("magnetogram"):
+        jp2_path, observed_at = download_forecast_magnetogram(dt, jp2_dir)
+        jpg_path = jp2_to_jpg_conversion(
+            jp2_path=jp2_path,
+            destination=full_disk_dir,
+            resize=False,
+        )
 
-    prediction_result = predict_full_disk(
-        image_path=str(jpg_path),
-        threshold=PREDICTION_THRESHOLD,
-    )
+    with stage("full_disk"):
+        prediction_result = predict_full_disk(
+            image_path=str(jpg_path),
+            threshold=PREDICTION_THRESHOLD,
+        )
 
-    region_result = propose_active_regions(
-        image_path=str(jpg_path),
-        heatmap_output_dir=heatmap_dir,
-    )
+    with stage("attribution"):
+        region_result = propose_active_regions(
+            image_path=str(jpg_path),
+            heatmap_output_dir=heatmap_dir,
+        )
 
-    crop_results = crop_proposed_active_regions_from_image(
-        image_path=jp2_path,
-        regions=region_result["regions"],
-        output_dir=active_regions_dir,
-        resize_to=PROPOSAL_IMAGE_SIZE,
-    )
-    ar_region_results = predict_ar_models_for_regions(
-        crop_results=crop_results,
-        model_names=AR_MODEL_NAMES,
-        threshold=AR_THRESHOLD,
-    )
+    with stage("regions"):
+        crop_results = crop_proposed_active_regions_from_image(
+            image_path=jp2_path,
+            regions=region_result["regions"],
+            output_dir=active_regions_dir,
+            resize_to=PROPOSAL_IMAGE_SIZE,
+        )
+        ar_region_results = predict_ar_models_for_regions(
+            crop_results=crop_results,
+            model_names=AR_MODEL_NAMES,
+            threshold=AR_THRESHOLD,
+        )
     logger.info(
         "Pipeline completed: class=%s flare_probability=%.4f proposed_regions=%d",
         prediction_result["pred_class"],
@@ -83,6 +91,7 @@ def run_pipeline(date: str) -> dict:
         "jpg_path": str(jpg_path),
         "image_path": str(jp2_path),
         "prediction_datetime": dt.isoformat(),
+        "observed_at": observed_at.isoformat(),
         "artifact_base_dir": str(artifact_base_dir),
         "artifact_dirs": artifact_dirs,
         "prediction": prediction_result,

@@ -77,10 +77,13 @@ class PredictionRepository:
     def exists_for_requested_at(self, requested_at: datetime) -> bool:
         return self.get_for_requested_at(requested_at) is not None
 
-    def save_prediction(self, prediction: dict) -> PredictionRecord:
+    def save_prediction(self, prediction: dict, *, commit: bool = True) -> PredictionRecord:
         prediction["requested_at"] = self.normalize_requested_at(prediction["requested_at"])
         record = PredictionRecord(**prediction)
         self.db.add(record)
-        self.db.commit()
-        self.db.refresh(record)
+        if commit:
+            self.db.commit()
+            self.db.refresh(record)
+        else:
+            self.db.flush()
         return record

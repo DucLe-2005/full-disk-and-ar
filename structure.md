@@ -4,9 +4,9 @@ This project is split into three main application areas:
 
 - `app/`: FastAPI backend
 - `web/`: Next.js frontend
-- `prediction/`: Prediction worker and model pipeline
+- `prediction/`: Scheduled forecast runner and model pipeline
 
-The full Docker Compose stack connects the frontend, backend, worker, PostgreSQL, and MinIO.
+The dashboard and API read forecasts from PostgreSQL and artifacts from MinIO. The hourly scheduler and local backfill invoke the same one-shot predictor.
 
 ---
 
@@ -16,10 +16,10 @@ The full Docker Compose stack connects the frontend, backend, worker, PostgreSQL
 Full-Disk-and-AR-models-for-forecasting-solar-flares/
 |-- app/                 FastAPI backend
 |-- web/                 Next.js frontend
-|-- prediction/          Prediction pipeline and worker
+|-- prediction/          Prediction pipeline and one-shot runner
 |-- requirements/        Shared Python dependency files
-|-- scripts/             Utility scripts and database migrations
-|-- data/                Local/generated artifacts
+|-- deploy/systemd/      Hourly production scheduler units
+|-- data/                Optional offline evaluation data
 |-- docker-compose.yml   Local full-stack runtime
 |-- requirements.txt     Root Python dependency entrypoint
 |-- README.md            Setup and runtime documentation
@@ -62,15 +62,14 @@ app/
 Main backend routes:
 
 - `GET /health`
-- `POST /predictions/jobs`
-- `GET /predictions/jobs/{job_id}`
+- `GET /predictions/jobs/{job_id}` (legacy status)
 - `GET /history/`
 
 ---
 
 ## Frontend: `web/`
 
-The frontend is a Next.js dashboard. It lets users request predictions, poll jobs, browse history, filter by time range, and display saved artifacts from MinIO.
+The frontend is a Next.js dashboard. Its live feed refreshes the latest 24 successful forecasts. The history view supports date and class filters and displays saved artifacts from MinIO.
 
 ```text
 web/
@@ -79,9 +78,8 @@ web/
 |   |   |-- history/
 |   |   |   `-- route.ts        Server proxy to FastAPI history endpoint
 |   |   `-- jobs/
-|   |       |-- route.ts        Server proxy to create jobs
 |   |       `-- [jobId]/
-|   |           `-- route.ts    Server proxy to poll job status
+|   |           `-- route.ts    Legacy job-status proxy
 |   |
 |   |-- globals.css            Dashboard styles
 |   |-- layout.tsx             Root layout
@@ -120,18 +118,19 @@ prediction/
 |
 |-- pipeline/
 |   |-- stages/          Production download, attribution, crop, predict stages
-|   `-- run_pipeline.py  Worker-facing pipeline orchestration
+|   |-- persistence.py   MinIO uploads and prediction row mapping
+|   `-- run_pipeline.py  Inference and artifact generation
 |
-|-- worker/
-|   `-- run_worker.py    Polls jobs, runs pipeline, saves results
+|-- run_forecast.py      One UTC slot or a resumable UTC range
+|-- worker/              Legacy runner
 |
 |-- evaluation/          Offline download, labels, inference, metrics, reports
 |
-|-- Dockerfile           Long-running worker container
+|-- Dockerfile           One-shot predictor container
 `-- requirements.txt
 ```
 
-The worker is the only production entrypoint. Offline tasks run as Python modules under `prediction.evaluation`.
+The scheduler invokes `prediction.run_forecast` in the predictor container. Offline tasks run as Python modules under `prediction.evaluation`.
 
 ---
 
@@ -150,89 +149,37 @@ There is also a root `requirements.txt` entrypoint for installing dependencies f
 
 ---
 
-## Scripts
-
-```text
-scripts/
-|-- migrations/
-|   `-- 001_hourly_prediction_schema.sql
-```
-
-The application currently creates database tables automatically on first startup through SQLAlchemy, but migration scripts are kept for reference/manual database setup.
-
----
-
 ## Runtime Flow
 
 ```text
-User
-  |
-  v
-Next.js frontend
-  |
-  v
-FastAPI backend
-  |
-  v
-PostgreSQL `pipeline_jobs`
-  |
-  v
-Prediction worker
-  |
-  v
-Prediction pipeline
-  |
-  |-- uploads images/artifacts --> MinIO
-  |
-  v
-PostgreSQL `predictions`
-  |
-  v
-Frontend polls and displays result
+Hourly scheduler or manual backfill
+  -> one-shot predictor -> Helioviewer + models
+                       -> MinIO artifacts
+                       -> PostgreSQL prediction row
+
+Dashboard -> Next.js history and detail routes -> FastAPI -> PostgreSQL
+          -> Next.js artifact route -> MinIO
 ```
 
-Step by step:
+The predictor takes a UTC forecast slot and acquires a PostgreSQL lock for that
+hour. The pipeline uses a recent observation at or before the slot. It uploads
+artifacts before the result is committed, so the dashboard can read the result
+once its files are available. The slot, observation and publication times are
+stored separately.
 
-1. The user chooses a time in the Next.js dashboard.
-2. The frontend sends the request to the Next.js API route.
-3. The Next.js API route forwards the request to FastAPI.
-4. FastAPI normalizes the requested time to the prediction hour.
-5. FastAPI checks whether a prediction already exists in `predictions`.
-6. If no prediction exists, FastAPI creates or reuses a queued row in `pipeline_jobs`.
-7. The worker polls `pipeline_jobs` for queued jobs.
-8. The worker marks the job as `running`.
-9. The worker runs `prediction/pipeline/run_pipeline.py`.
-10. The pipeline downloads the closest valid magnetogram image.
-11. If the image is not within the allowed time window, the job is marked `failed`.
-12. If the image is valid, the pipeline runs full-disk prediction, heatmap generation, active-region proposal, active-region crop prediction, and artifact generation.
-13. The worker uploads generated artifacts to MinIO.
-14. The worker inserts the final prediction row into `predictions`.
-15. The worker marks the job as `completed`.
-16. The frontend keeps polling until the result is available, then displays the prediction and artifact images.
-
----
+See [the README](README.md#hourly-deployment) for the hourly timer and cutover
+instructions.
 
 ## Artifact Storage
 
-Generated files are created locally inside the worker first:
+The predictor generates images in a temporary directory and uploads them to
+MinIO under a UTC hour prefix:
 
 ```text
-data/YYYY/MM/DD/jp2/
-data/YYYY/MM/DD/full_disk/
-data/YYYY/MM/DD/heat_maps/
-data/YYYY/MM/DD/active_regions/
+predictions/YYYY/MM/DD/HH/full_disk/
+predictions/YYYY/MM/DD/HH/heat_maps/
+predictions/YYYY/MM/DD/HH/active_regions/
 ```
-
-The worker then uploads them to MinIO:
-
-```text
-predictions/{prediction_id}/jp2/
-predictions/{prediction_id}/full_disk/
-predictions/{prediction_id}/heat_maps/
-predictions/{prediction_id}/active_regions/
-```
-
-`prediction_id` is the database primary key from the `predictions` table.
 
 The database stores MinIO object paths. The frontend turns those object paths into browser URLs using:
 

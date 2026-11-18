@@ -30,6 +30,8 @@ class HeatmapResponse(BaseModel):
 class PredictionResponse(BaseModel):
     prediction_id: str
     requested_at: str
+    observed_at: str | None = None
+    is_backfill: bool | None = None
     timestamp: str
     global_flare_probability: float
     localized_probabilities: List[float] = Field(default_factory=list)

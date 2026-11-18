@@ -153,6 +153,8 @@ class PredictionService:
         return PredictionResponse(
             prediction_id=record.id,
             requested_at=record.requested_at.isoformat(),
+            observed_at=record.observed_at.isoformat() if record.observed_at else None,
+            is_backfill=record.is_backfill,
             timestamp=record.created_at.isoformat(),
             global_flare_probability=record.global_flare_probability,
             localized_probabilities=record.localized_probabilities,

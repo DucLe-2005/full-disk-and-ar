@@ -30,4 +30,5 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY app ./app
 COPY prediction ./prediction
 
-CMD ["python", "-m", "prediction.worker.run_worker"]
+ENTRYPOINT ["python", "-m", "prediction.run_forecast"]
+CMD ["--help"]

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createPredictionJob, fetchPredictionDetail, fetchPredictionHistory } from "./api";
+import { fetchPredictionDetail, fetchPredictionHistory } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -25,22 +25,5 @@ describe("backend API client", () => {
       "Prediction detail request failed with 404"
     );
     expect(fetchMock.mock.calls[0][0]).toContain("id%2Fwith%20spaces");
-  });
-
-  it("posts the exact job contract and propagates API validation details", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ detail: "helioviewer_date is invalid" }), { status: 422 })
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(createPredictionJob("bad-date")).rejects.toThrow("helioviewer_date is invalid");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/predictions/jobs",
-      expect.objectContaining({
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ helioviewer_date: "bad-date" })
-      })
-    );
   });
 });

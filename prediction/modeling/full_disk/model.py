@@ -56,7 +56,12 @@ class Custom_AlexNet(nn.Module):
     def forward(self, x):
         x = self.first_conv_layer(x)
         x = self.features(x)
-        x = self.avgpool(x) 
+        pool_height, pool_width = self.avgpool.output_size
+        if x.device.type == "mps" and (x.size(-2) % pool_height or x.size(-1) % pool_width):
+            # MPS adaptive pooling requires dimensions divisible by the output size.
+            x = self.avgpool(x.cpu()).to(x.device)
+        else:
+            x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         if self.tr:

@@ -5,6 +5,17 @@ This repo presents the web application and deep learning pipeline that integrate
 
 ![Solar flare forecasting system architecture](architecture.png)
 
+### Docker containers
+
+<img src="docker-containers.png" width="480" alt="The browser opens the Next.js dashboard, which reads forecasts through FastAPI and images from MinIO. FastAPI reads forecasts from PostgreSQL and requests observed flares from the solar-events API backed by MongoDB.">
+
+`make up` starts the six dashboard, API, and storage services and runs
+`createbuckets`. The setup container exits after preparing the MinIO bucket.
+The `predictor` starts on demand for an hourly forecast or a backfill. It fetches
+a magnetogram from Helioviewer, uploads forecast images to MinIO, saves the
+forecast in PostgreSQL, and exits. The [host timer](#hourly-deployment) is
+enabled separately.
+
 ## Demo
 
 [Watch the demo video on YouTube](https://youtu.be/VvdGnm-D_tU)
@@ -12,12 +23,15 @@ This repo presents the web application and deep learning pipeline that integrate
 ## Structure
 
 - `app/`: backend server
+- `web/`: dashboard for live forecasts and prediction history.
+- `solar-events-service/`: observed flare catalog and API for overlays.
+- `deploy/systemd/`: optional hourly forecast timer and service for Linux hosts.
 - `prediction/pipeline/`: inference stages used by the application.
-- `prediction/worker/`: cosume prediction jobs in the queue and save artifacts generated.
+- `prediction/run_forecast.py`: publish one forecast or replay a UTC date range.
 - `prediction/modeling/`: model architectures and trained weights.
 - `prediction/evaluation/`: Offline dataset preparation, model evaluation, and
   localization analysis. These utilities reuse selected production pipeline
-  stages but are not imported by the production worker.
+  stages but are not imported by the production forecast runner.
 
 ## Source Code Documentation
 
@@ -76,70 +90,78 @@ This repo presents the web application and deep learning pipeline that integrate
   - `final_hulls_with_actual_ars/`: diagnostic overlays of proposal hulls and
     projected catalogue active-region locations.
 
-- `web/`: web dashboard to view all solar flare predictions.
-
 ## Quick Start
-
-Confirm model weights exist:
-
-```text
-prediction/modeling/full_disk/trained_models/
-prediction/modeling/active_region/trained_models/
-```
-
-Choose one of the following setup paths. Run `make help` at any time to see the
-standardized Docker commands.
 
 ### Docker Compose
 
-Create a `.env` file in the repository root using `.env.example` as the
-template, then start the complete stack:
+Start Docker and run these commands from the repository root. Keep your
+existing `.env` if you've already configured one.
 
 ```sh
-make build
+test -f .env || cp .env.example .env
 make up
+make ps
 ```
 
-For Docker-based development with source bind mounts and automatic API and
-frontend reloads, use:
+Open the [dashboard](http://localhost:3000). It can display existing forecasts
+as soon as the API is ready. A fresh database starts with an empty history.
+
+To generate your first forecast, fetch the checkpoints with Git LFS and run
+the predictor:
 
 ```sh
-make up
+git lfs pull
+make predict-hour
 ```
 
-Restart the worker after changing its Python source:
+If the current magnetogram hasn't arrived yet, try a historical hour with
+`make predict-hour HOUR=2026-09-07T15:00:00Z`. Use `make scrape-events` to
+populate the observed-flare catalog for overlays and see [Backfill](#backfill)
+to populate a range of forecast history.
+
+### Hourly deployment
+
+The `predictor` Compose service is a one-shot container. The dashboard and API
+start with the normal stack. On a Linux Compose host, use the checked-in
+[systemd service](deploy/systemd/flare-forecast.service) and
+[timer](deploy/systemd/flare-forecast.timer). They assume the deployment lives
+at `/opt/flare-dashboard` and Docker is at `/usr/bin/docker`. Adjust the service
+if your directory, Docker executable, or Compose files differ.
+
+Stop any legacy prediction worker before the cutover. From the deployment
+directory, build the predictor and verify it can publish a forecast:
 
 ```sh
-make restart SERVICE=worker
+docker compose build predictor
+docker compose run --rm -T predictor --current-hour --attempts 3
 ```
 
-### Production deployment
-
-Publish versioned API, web, and worker images to Docker Hub from a checkout
-where the Git-LFS model files have been downloaded:
+Once the one-shot run succeeds and its images load in the dashboard, install
+the timer:
 
 ```sh
-docker login
-DOCKERHUB_USERNAME=ducleanh IMAGE_TAG=v1.0.0 scripts/publish-images.sh
+sudo install -m 0644 deploy/systemd/flare-forecast.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now flare-forecast.timer
+systemctl list-timers flare-forecast.timer
+journalctl -u flare-forecast.service
 ```
 
-On the production host, copy `docker-compose.prod.yml` and create `.env` from
-`.env.prod.example`. Set the image tag, replace all example passwords, then
-start the stack without cloning the source code:
-
-```sh
-make prod-pull
-make prod-up
-```
-
-Only the dashboard is published to the host (port `3000` by default). Postgres,
-MinIO, the API, and the worker remain on a private Compose network.
+The timer starts at five minutes past each UTC hour. The runner fixes the
+forecast slot at startup and makes up to three attempts, one minute apart.
+Adjust the five-minute starting offset once you have measured HMI availability
+and runtime on the deployment host. Helioviewer can lag even after those retries.
+If no observation qualifies, the run exits nonzero and the dashboard continues
+to show its last successful forecasts. To recover a missed hour after the image
+arrives, run the same command with `--hour 2026-11-17T15:00:00Z` in place of
+`--current-hour`. A hosting platform with scheduled jobs can invoke the same
+predictor container.
 
 ### Local development
 
 Create `.env` from `.env.example` in the repository root and create
 `web/.env.local` from `web/.env.local.example`. Install dependencies, then run
-the API, worker, and frontend in separate terminals:
+the API and frontend in separate terminals:
 
 ```sh
 # Install Python dependencies
@@ -148,10 +170,7 @@ python -m pip install -r requirements.txt
 # Terminal 1: API
 uvicorn app.main:app --reload
 
-# Terminal 2: worker
-python -m prediction.worker.run_worker
-
-# Terminal 3: frontend
+# Terminal 2: frontend
 cd web
 npm install
 npm run dev
@@ -167,55 +186,47 @@ Services:
 - MinIO API: `http://localhost:9000`
 - MinIO console: `http://localhost:9001`
 
-The model weights are mounted read-only into the worker and manual pipeline containers. They are excluded from the Docker build context to keep rebuilds fast.
+The model weights are mounted read-only into predictor containers. The Docker build includes only the two checkpoints used for inference.
 
 When the dashboard opens an individual prediction, it requests `GET /history/{prediction_id}`. The API queries the solar-events service for actual M/X flare regions from one hour before through one hour after the prediction timestamp and, when locations are available, returns an `actual_flare_overlay_url` with those locations marked on the candidate-region image. Set `SOLAR_EVENTS_SERVICE_URL` to override the default internal Compose URL.
 
 ## Common Commands
 
 ```sh
-# Create/start or control existing development containers
-make up
-make start
-make stop
-make restart
-
-# Operate on one service
-make restart SERVICE=worker
-make logs SERVICE=api
-make build SERVICE=web
-make rebuild SERVICE=worker
-
-# Inspect, pull, and validate
-make ps
-make logs
-make pull
-make config
-
-# Remove containers, or completely reset containers and volumes
-make down
-make shutdown
+make help                 # List available commands
+make up                   # Create and start the stack
+make ps                   # Check which services are running
+make logs SERVICE=api     # Follow logs for one service
+make predict-hour         # Generate the current UTC hour's forecast
+make stop                 # Stop the stack
+make start                # Start existing containers again
+make down                 # Remove containers and keep stored data
 ```
 
-`up` creates missing containers and starts the development stack in the
-background. `start` only starts containers that already exist. `down` preserves
-named volumes; `shutdown` removes volumes and orphan containers as well.
+Use `make build SERVICE=predictor` to build the prediction image ahead of time.
+`make shutdown` also deletes the volumes that hold forecasts, images, and
+observed flare records.
 
 ## Backfill
 
-Queue hourly jobs from `2020-01-01 00:00:00` through `2025-12-31 23:00:00`:
+Run a small batch against local PostgreSQL and MinIO first. Dates are UTC
+and the end date is inclusive through 23:00:
 
 ```sh
-make backfill
+make backfill START_TIME=2026-01-01 END_TIME=2026-01-01
 ```
 
-Custom inclusive range:
+Then run longer batches up to the hour before the production cutover. Existing
+forecasts are skipped. The command continues through failures, logs their
+hours, and exits nonzero if any hour failed. Rerun the same range or retry a
+single failed hour with `make predict-hour HOUR=2026-01-01T15:00:00Z`.
 
-```sh
-make backfill-range START_TIME="2020-01-01" END_TIME="2025-12-31"
-```
-
-The service skips hours with an existing prediction or an already queued/running job. The worker processes the resulting queue normally.
+The backfill creates the same full-disk images, heatmaps, and active-region
+crops as a scheduled run. To migrate a locally populated archive, copy the
+MinIO objects with their original keys first. Then import the corresponding
+`predictions` rows, preserving existing production forecasts on any matching
+UTC slot. Verify a sample of archive predictions and image links before
+expanding the range.
 
 ## Offline Evaluation
 
@@ -252,24 +263,25 @@ This creates `data/evaluation_2025/dataset.csv`, runs batched inference, and
 writes `full_disk_predictions.csv` and `metrics.csv`. See
 `prediction/evaluation/README.md` for the offline package structure.
 
-## Job Flow
+## Forecast Flow
 
-1. The API normalizes requested timestamps to the whole hour.
-2. It deduplicates by requested hour and inserts a queued job.
-3. The worker polls Postgres and claims the oldest queued job.
-4. The pipeline requests the closest Helioviewer image.
-5. The image is accepted only when its timestamp is within `+/-12` minutes of the requested hour; otherwise the job is marked failed.
-6. The worker uploads artifacts to MinIO, saves prediction metadata, and marks the job completed.
-
-The worker processes existing jobs only. It does not currently enqueue a new job automatically at each hour.
+1. The scheduled run or backfill selects an explicit hourly UTC slot.
+2. The runner skips published forecasts and uses the same PostgreSQL lock for
+   concurrent attempts at the same hour.
+3. The pipeline uses an HMI image observed at or within 12 minutes before the
+   slot. The forecast is for the next 24 hours from the slot. The magnetogram
+   timestamp is saved separately from the slot and the publication time.
+4. The runner uploads artifacts before committing the prediction row. An
+   interrupted run can be retried using the same hour.
+5. The live dashboard refreshes every minute and shows the latest 24 successful
+   forecasts in descending slot order. History supports date and class filters.
 
 ## API
 
 - `GET /health`
-- `POST /predictions/jobs`
-- `POST /predictions/jobs/range`
-- `GET /predictions/jobs/{job_id}`
 - `GET /history/`
+- `GET /history/{prediction_id}`
+- `GET /predictions/jobs/summary` and `GET /predictions/jobs/{job_id}` read legacy job records.
 
 ## Pipeline
 
@@ -278,31 +290,25 @@ The pipeline in `prediction/pipeline/run_pipeline.py`:
 1. Downloads an HMI JP2 and converts it to a full-disk JPG.
 2. Runs the fold-1 full-disk classifier.
 3. Generates Guided Grad-CAM, Integrated Gradients, and DeepLiftShap maps in memory.
-4. Extracts buffered bounding regions from each attribution map, keeps overlap
-   groups represented in all three attribution methods, and merges each group
-   by spatial union into the consensus map.
-5. Discards overlap groups missing any attribution method and applies the
-   solar-disk mask to the retained region unions.
+4. Extracts buffered bounding regions from each attribution map and intersects
+   their masks, retaining only pixels covered by all three attribution methods.
+5. Discards every non-shared portion and applies the solar-disk mask to the
+   retained intersection regions.
 6. Saves the buffered solar mask.
 7. Produces padded fixed-size `512x512` active-region crops.
 8. Runs active-region model inference.
 
 Every retained merged region is an active-region proposal. Proposals are ranked by a normalized area-weighted consensus score: mean fused heatmap intensity inside the polygon multiplied by `log1p(region_area) / log1p(max_region_area)`.
 
-Production has no command-line parser. The worker supplies only the requested
-Helioviewer timestamp; stable model selections, thresholds, crop size,
+The predictor passes the requested slot to the pipeline. Model selections,
+thresholds, crop size,
 clustering settings, and proposal buffers are named constants in
 `run_pipeline.py` and `region_proposal.py`.
 
 ## Artifact Storage
 
-Local worker artifacts:
-
-```text
-data/YYYY/MM/DD/full_disk/
-data/YYYY/MM/DD/heat_maps/
-data/YYYY/MM/DD/active_regions/
-```
+The runner uses an isolated temporary directory for each attempt and removes it
+after publishing the forecast or reporting a failure.
 
 MinIO object keys:
 
@@ -312,32 +318,25 @@ predictions/YYYY/MM/DD/HH/heat_maps/{buffered-mask-filename}
 predictions/YYYY/MM/DD/HH/active_regions/{filename}
 ```
 
-The JP2 is an intermediate input and is not uploaded. The database stores MinIO object keys. The frontend resolves them as:
-
-```text
-NEXT_PUBLIC_ARTIFACT_BASE_URL + "/" + object_key
-```
-
-With the default Compose configuration:
-
-```text
-http://localhost:9000/solar-artifacts/predictions/YYYY/MM/DD/HH/...
-```
+The runner keeps the JP2 as an intermediate input. PostgreSQL stores the keys
+for the uploaded images. The browser requests them through the Next.js
+`/api/artifacts` route, which reads from `MINIO_ARTIFACT_BASE_URL`. Compose
+defaults to `http://minio:9000/solar-artifacts` on the internal network.
 
 ## Environment
 
 The main settings are defined in `.env.example`:
 
-- `DATABASE_URL`: Postgres connection used by API and worker.
+- `DATABASE_URL`: Postgres connection used by the API and predictor.
 - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`.
-- `DEFAULT_HELIOVIEWER_DATE`: fallback for jobs missing a requested date.
 
 Compose uses service hostnames such as `db` and `minio`. Local processes outside Docker should use reachable hostnames such as `localhost`.
 
 ## Troubleshooting
 
-- Worker failures: `make logs SERVICE=worker`
-- Missing images: verify MinIO at `http://localhost:9000` and `NEXT_PUBLIC_ARTIFACT_BASE_URL=http://localhost:9000/solar-artifacts`.
+- Scheduled forecast failures: `journalctl -u flare-forecast.service`
+- Missing images: check `make ps` and verify that the web container's
+  `MINIO_ARTIFACT_BASE_URL` points to the bucket that contains the artifacts.
 - Stale service image: rebuild only that service with `make rebuild SERVICE=<service>`.
 - Clean reset: run `make shutdown`, then `make build` and `make up`.
 

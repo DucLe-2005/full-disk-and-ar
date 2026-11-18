@@ -15,7 +15,7 @@ services:
       - web_next:/app/.next
     command: npm run dev -- --hostname 0.0.0.0
 
-  worker:
+  predictor:
     volumes:
       - ./app:/app/app
       - ./prediction:/app/prediction

@@ -17,6 +17,8 @@ export type Heatmap = {
 export type Prediction = {
   prediction_id: string;
   requested_at: string;
+  observed_at?: string | null;
+  is_backfill?: boolean | null;
   timestamp: string;
   global_flare_probability: number;
   localized_probabilities: number[];

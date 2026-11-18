@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 
 import torch
 from PIL import Image
 from torch.nn.functional import softmax
 from torchvision.transforms import Compose, ToTensor
+
+from prediction.modeling.device import select_inference_device
 
 AR_IMAGE_TRANSFORM = Compose([ToTensor()])
 
@@ -22,7 +25,7 @@ def build_ar_model(model_name: str) -> torch.nn.Module:
         return Custom_ResNet34(train=False)
     if model_name == "mobilenet":
         from prediction.modeling.active_region.models.mobilenet import MobileNet
-        return MobileNet()
+        return MobileNet(pretrained=False)
     if model_name == "mobilevit":
         from prediction.modeling.active_region.models.mobilevit import MobileViT
         return MobileViT(
@@ -41,13 +44,24 @@ def load_ar_model(
     device: torch.device | str = "cpu",
 ) -> tuple[torch.nn.Module, Path]:
     checkpoint_path = Path(checkpoint_path or DEFAULT_AR_MODELS[model_name])
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    device = torch.device(device)
+    checkpoint_device = "cpu" if device.type == "mps" else device
+    checkpoint = torch.load(checkpoint_path, map_location=checkpoint_device)
 
     model = build_ar_model(model_name).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
     return model, checkpoint_path
+
+
+@cache
+def _get_ar_model(
+    model_name: str,
+    device: torch.device,
+) -> tuple[torch.nn.Module, Path]:
+    """Reuse the default checkpoint model for this worker process."""
+    return load_ar_model(model_name, device=device)
 
 
 def predict_one_ar_image(
@@ -82,14 +96,17 @@ def predict_ar_models_for_regions(
     model_names: list[str] | None = None,
     threshold: float = 0.5,
 ) -> list[dict]:
+    if not crop_results:
+        return []
+
     model_names = model_names or ["mobilenet"]
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = select_inference_device()
 
     loaded_models: dict[str, tuple[torch.nn.Module, Path]] = {}
     load_errors: dict[str, str] = {}
     for model_name in model_names:
         try:
-            loaded_models[model_name] = load_ar_model(model_name, device=device)
+            loaded_models[model_name] = _get_ar_model(model_name, device)
         except Exception as exc:
             load_errors[model_name] = f"{type(exc).__name__}: {exc}"
 

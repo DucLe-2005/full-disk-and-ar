@@ -6,13 +6,14 @@ TEST_COMPOSE := $(DOCKER_COMPOSE) -f docker-compose.test.yml
 PROD_COMPOSE := $(DOCKER_COMPOSE) -f docker-compose.prod.yml
 
 SERVICE ?=
-START_TIME ?=
+START_TIME ?= 2026-01-01
 END_TIME ?=
+HOUR ?=
 
 .DEFAULT_GOAL := help
 
 .PHONY: help up start stop down shutdown restart build rebuild pull ps logs \
-	config scrape-events backfill backfill-range test test-build test-api \
+	config scrape-events predict-hour backfill backfill-range test test-build test-api \
 	test-solar-events test-web prod-pull prod-up prod-start prod-stop prod-down \
 	prod-restart prod-build prod-rebuild prod-logs
 
@@ -34,7 +35,7 @@ down: ## Stop and remove development containers and networks.
 shutdown: ## Completely shut down and delete volumes and orphan containers.
 	$(DEV_COMPOSE) down -v --remove-orphans
 
-restart: ## Restart all services, or one with SERVICE=worker.
+restart: ## Restart all services, or one with SERVICE=api.
 	$(DEV_COMPOSE) restart $(SERVICE)
 
 build: ## Build all images, or one with SERVICE=api.
@@ -50,7 +51,7 @@ pull: ## Pull newer base/service images used by development.
 ps: ## Show development container status.
 	$(DEV_COMPOSE) ps
 
-logs: ## Follow logs for all services, or one with SERVICE=worker.
+logs: ## Follow logs for all services, or one with SERVICE=api.
 	$(DEV_COMPOSE) logs -f $(SERVICE)
 
 config: ## Validate and render the merged development Compose configuration.
@@ -59,13 +60,14 @@ config: ## Validate and render the merged development Compose configuration.
 scrape-events: ## Populate the solar-events database from the scraper.
 	$(DEV_COMPOSE) exec solar-events-api python scraper.py
 
-backfill: ## Queue the default historical prediction backfill.
-	$(DEV_COMPOSE) exec api python -m app.scripts.backfill_predictions
+predict-hour: ## Publish one UTC forecast. Set HOUR to replay an explicit slot.
+	$(DEV_COMPOSE) run --rm -T predictor $(if $(HOUR),--hour "$(HOUR)",--current-hour) --attempts 3
 
-backfill-range: ## Queue a custom range; requires START_TIME and END_TIME.
-	@test -n "$(START_TIME)" || (echo "START_TIME is required" >&2; exit 2)
+backfill: ## Replay from START_TIME (default 2026-01-01) through END_TIME.
 	@test -n "$(END_TIME)" || (echo "END_TIME is required" >&2; exit 2)
-	$(DEV_COMPOSE) exec api python -m app.scripts.backfill_predictions --start-time "$(START_TIME)" --end-time "$(END_TIME)"
+	$(DEV_COMPOSE) run --rm -T predictor --start-time "$(START_TIME)" --end-time "$(END_TIME)"
+
+backfill-range: backfill
 
 test: test-build test-api test-solar-events test-web ## Build and run every isolated test suite.
 
@@ -108,5 +110,3 @@ prod-rebuild: ## Rebuild and force-recreate production services.
 
 prod-logs: ## Follow production logs, optionally with SERVICE=api.
 	$(PROD_COMPOSE) logs -f $(SERVICE)
-
-	

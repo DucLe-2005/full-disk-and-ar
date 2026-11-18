@@ -429,13 +429,8 @@ h1 {
   color: var(--red);
 }
 
-.observationGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-
 .visualStage,
+.candidateComparisonSection,
 .attributionSection,
 .regionsSection,
 .catalogPanel {
@@ -494,6 +489,7 @@ h1 {
 .sourceMapsGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
   gap: 14px;
 }
 
@@ -597,13 +593,109 @@ h1 {
   background: #050505;
 }
 
+.candidateComparisonSection {
+  overflow: hidden;
+  padding: 16px;
+}
+
+.candidateComparisonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 2px 14px;
+}
+
+.candidateComparisonHeader h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.candidateComparisonHeader p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.candidateComparisonGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.candidateComparisonPanel {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.candidateComparisonPanel .artifactImage,
+.candidateComparisonPanel .imagePlaceholder {
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+
+.candidateComparisonPanel figcaption {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.candidateComparisonPanel figcaption strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.candidateComparisonPanel figcaption span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
 .candidateRegionCanvas {
   position: relative;
   overflow: hidden;
+  aspect-ratio: 1 / 1;
   background: #050505;
+  touch-action: none;
 }
 
-.candidateRadiusOverlay {
+.candidateComparisonGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.candidateZoomContent {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+  transition: transform 120ms ease-out;
+}
+
+.candidateRegionCanvas.dragging .candidateZoomContent {
+  transition: none;
+}
+
+.candidateZoomContent > .artifactImage,
+.candidateZoomContent > .imagePlaceholder {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+.candidateRegionOverlay {
   position: absolute;
   z-index: 3;
   inset: 0;
@@ -613,77 +705,391 @@ h1 {
   pointer-events: none;
 }
 
-.candidateRadiusCircle {
-  fill: rgb(14 165 233 / 0.08);
-  stroke: #38bdf8;
-  stroke-dasharray: 6 4;
+.candidateZoomControls {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 5px;
+}
+
+.candidateZoomControls button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  border-radius: 7px;
+  background: rgb(10 18 28 / 0.88);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.regionCard {
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.regionCard.selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-soft);
+}
+
+.candidateIntersectionPolygon {
+  fill: rgb(34 211 238 / 0.18);
+  stroke: #22d3ee;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.candidateCenterPoint {
-  fill: #e0f2fe;
-  stroke: #075985;
-  stroke-width: 1.5;
+.candidateBoundingBox {
+  fill: none;
+  stroke: #fbbf24;
+  stroke-dasharray: 7 4;
+  stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.candidateRankLabel {
-  fill: #f0f9ff;
-  font-size: 12px;
+.candidateBoxLabel rect {
+  fill: #fbbf24;
+}
+
+.candidateBoxLabel text {
+  fill: #1c1917;
+  font-size: 11px;
   font-weight: 800;
-  paint-order: stroke;
-  stroke: rgb(3 20 31 / 0.92);
-  stroke-linejoin: round;
-  stroke-width: 3px;
+  font-variant-numeric: tabular-nums;
 }
 
-.radiusControl {
+.candidateSelectTarget {
+  fill: transparent;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.candidateSelectTarget:focus-visible {
+  stroke: #fff;
+  stroke-width: 4;
+  outline: none;
+}
+
+.candidateOverlaySelected .candidateBoundingBox {
+  stroke: #22d3ee;
+  stroke-dasharray: none;
+  stroke-width: 3;
+}
+
+.candidateOverlaySelected .candidateIntersectionPolygon {
+  fill: rgb(34 211 238 / 0.3);
+  stroke-width: 3;
+}
+
+.candidateBoxLabel.selected rect {
+  fill: #22d3ee;
+}
+
+.candidateInspection {
   display: grid;
-  gap: 9px;
-  padding: 13px 16px 15px;
-  border-top: 1px solid var(--line);
-  background: #fbfcfe;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(0, 1.4fr);
+  gap: 14px;
+  margin-top: 14px;
 }
 
-.radiusControlLabel {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
+.candidateList {
+  display: grid;
+  align-content: start;
+  gap: 6px;
 }
 
-.radiusControlLabel label {
+.candidateListItem {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--text);
-  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidateListItem.selected {
+  border-color: var(--cyan);
+  background: var(--cyan-soft);
+}
+
+.candidateListItem span,
+.candidateListItem strong {
+  font-size: 0.88rem;
   font-weight: 750;
 }
 
-.radiusControlLabel output {
-  min-width: 58px;
-  color: #0369a1;
-  font-size: 0.82rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: right;
-}
-
-.radiusControl input[type="range"] {
-  width: 100%;
-  margin: 0;
-  accent-color: #0284c7;
-  cursor: ew-resize;
-}
-
-.radiusControl input[type="range"]:focus-visible {
-  outline: 3px solid rgb(14 165 233 / 0.28);
-  outline-offset: 4px;
-}
-
-.radiusControl > span {
+.candidateListItem small {
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.72rem;
-  line-height: 1.4;
+}
+
+.candidateInspectorHint {
+  align-self: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.regionInspector {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.regionInspector .artifactImage,
+.regionInspector .imagePlaceholder {
+  height: 100%;
+  min-height: 140px;
+  aspect-ratio: 1 / 1;
+}
+
+.regionInspectorBody {
+  padding: 12px;
+}
+
+.regionInspectorBody h3,
+.regionInspectorBody p {
+  margin: 0;
+}
+
+.regionInspectorBody h3 {
+  font-size: 1rem;
+}
+
+.regionInspectorBody p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.regionInspectorBody dl {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.regionInspectorBody dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.regionInspectorBody dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.regionInspectorBody dd {
+  max-width: 65%;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.attributionToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 12px;
+}
+
+.attributionActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.attributionActions > button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.attributionToolbar p,
+.comparisonHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.compareToggle {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.compareToggle.active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.attributionFocusGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.attributionFocusGrid.comparing {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.attributionFocusPanel {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.attributionFocusViewport {
+  aspect-ratio: 1.5 / 1;
+  overflow: hidden;
+  background: #050505;
+}
+
+.attributionFocusImage {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  transform-origin: center;
+  transition: transform 140ms ease-out;
+}
+
+.attributionFocusPanel .artifactImage,
+.attributionFocusPanel .imagePlaceholder {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1.5 / 1;
+  min-height: 0;
+}
+
+.attributionFocusPanel figcaption {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.attributionFocusPanel figcaption strong {
+  font-size: 0.88rem;
+}
+
+.attributionFocusPanel figcaption span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.attributionMethod {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.attributionMethod.selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-soft);
+}
+
+.attributionMethod .artifactImage,
+.attributionMethod .imagePlaceholder {
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+
+.attributionMethodCopy {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+}
+
+.attributionMethodCopy strong {
+  font-size: 0.78rem;
+}
+
+.attributionMethodCopy small {
+  color: var(--muted);
+  font-size: 0.69rem;
+  line-height: 1.35;
+}
+
+.comparisonHint {
+  margin-top: 10px;
+}
+
+.eventTitle h2 {
+  margin: 0 0 4px;
+  font-size: 1.3rem;
+  letter-spacing: -0.025em;
+}
+
+.eventTitle > div > strong {
+  display: block;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 550;
+}
+
+@media (max-width: 760px) {
+  .candidateInspection,
+  .regionInspector,
+  .attributionFocusGrid.comparing {
+    grid-template-columns: 1fr;
+  }
+
+  .regionInspector .artifactImage,
+  .regionInspector .imagePlaceholder {
+    height: auto;
+    min-height: 0;
+  }
+
+  .attributionToolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .imagePlaceholder {
@@ -902,8 +1308,7 @@ dd {
     padding: 16px;
   }
 
-  .workspace,
-  .observationGrid {
+  .workspace {
     grid-template-columns: 1fr;
   }
 
@@ -984,6 +1389,20 @@ dd {
   }
 
   .sourceMapsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .candidateComparisonSection {
+    padding: 12px;
+  }
+
+  .candidateComparisonHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .candidateComparisonGrid {
     grid-template-columns: 1fr;
   }
 
@@ -1673,11 +2092,8 @@ dd {
   font-size: 1rem;
 }
 
-.observationGrid {
-  gap: 14px;
-}
-
 .visualStage,
+.candidateComparisonSection,
 .attributionSection,
 .regionsSection,
 .catalogPanel {
@@ -1728,7 +2144,6 @@ dd {
 }
 
 .attributionMap figcaption {
-  min-height: 68px;
   padding: 11px 12px;
 }
 
@@ -2025,4 +2440,52 @@ button:active:not(:disabled) {
   .attributionMap .solarImage {
     animation: none;
   }
+}
+
+.jobStatus {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  margin: 12px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.jobStatusContent {
+  min-width: 0;
+}
+
+.jobStatusContent p,
+.jobStatusContent details {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.jobStatusContent summary {
+  cursor: pointer;
+}
+
+.jobStatusContent ol {
+  margin: 6px 0 0;
+  padding-inline-start: 20px;
+}
+
+.jobStatusActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jobStatusActions button {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text);
 }

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the solar flare forecast every hour
+
+[Timer]
+OnCalendar=*-*-* *:05:00 UTC
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

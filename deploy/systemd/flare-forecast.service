@@ -1,0 +1,10 @@
+[Unit]
+Description=Publish the current UTC solar flare forecast
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/flare-dashboard
+ExecStart=/usr/bin/docker compose run --rm -T predictor --current-hour --attempts 3
+TimeoutStartSec=50min

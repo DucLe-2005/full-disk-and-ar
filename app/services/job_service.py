@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
 
 from app.api.repositories.job_repository import JobRepository
-from app.api.schemas.job import JobResponse
+from app.api.schemas.job import JobResponse, RecentJobsSummary
 from app.api.repositories.prediction_repository import PredictionRepository
-from app.models.pipeline_job import PipelineJob
+from app.core.job_progress import HEARTBEAT_STALE_SECONDS, elapsed_seconds
+from app.models.pipeline_job import JobStatus, PipelineJob
 
 
 class JobService:
@@ -117,7 +118,35 @@ class JobService:
             return None
         return self._to_response(job)
 
+    def recent_summary(self) -> RecentJobsSummary:
+        window_hours = 24
+        since = datetime.utcnow() - timedelta(hours=window_hours)
+        queued_count, oldest = self.job_repo.queue_snapshot()
+        counts = self.job_repo.terminal_counts(since)
+        durations = [
+            elapsed_seconds(start, end)
+            for start, end in self.job_repo.recent_processing_times(since, limit=1000)
+        ]
+        measured = [duration for duration in durations if duration is not None]
+        return RecentJobsSummary(
+            window_hours=window_hours,
+            queued_count=queued_count,
+            oldest_queued_at=f"{oldest.isoformat()}Z" if oldest else None,
+            completed_count=counts.get(JobStatus.COMPLETED, 0),
+            failed_count=counts.get(JobStatus.FAILED, 0),
+            artifact_upload_failure_count=self.job_repo.recent_upload_failure_count(since),
+            processing_sample_count=len(measured),
+            mean_processing_seconds=round(sum(measured) / len(measured), 3) if measured else None,
+        )
+
     def _to_response(self, job: PipelineJob) -> JobResponse:
+        now = datetime.utcnow()
+        progress = getattr(job, "progress", None)
+        stages = progress.stages if progress else []
+        active = stages[-1] if stages and stages[-1]["status"] == "running" else None
+        running = job.status == JobStatus.RUNNING
+        end = now if running or job.status == JobStatus.QUEUED else job.finished_at
+        heartbeat = progress.heartbeat_at if progress else None
         return JobResponse(
             job_id=job.id,
             status=job.status.value,
@@ -132,6 +161,19 @@ class JobService:
             prediction_id=job.prediction_id,
             error_message=job.error_message,
             payload=job.payload,
+            queue_wait_seconds=elapsed_seconds(job.created_at, job.started_at or end),
+            processing_seconds=elapsed_seconds(job.started_at, end),
+            total_elapsed_seconds=elapsed_seconds(job.created_at, end),
+            heartbeat_at=f"{heartbeat.isoformat()}Z" if heartbeat else None,
+            worker_unresponsive=(
+                (now - heartbeat).total_seconds() >= HEARTBEAT_STALE_SECONDS
+                if heartbeat is not None and running else None
+            ),
+            current_stage=active["name"] if active else None,
+            stages=stages,
+            warnings=progress.warnings if progress else [],
+            failure_code=progress.failure_code if progress else None,
+            reused_prediction=progress.reused_prediction if progress else False,
         )
 
     def _parse_requested_at(self, payload: dict) -> datetime:

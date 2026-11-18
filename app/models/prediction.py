@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, Float, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -15,6 +15,8 @@ class PredictionRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     requested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, unique=True, index=True)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_backfill: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     global_flare_probability: Mapped[float] = mapped_column(Float, nullable=False)
     predicted_class: Mapped[int] = mapped_column(Integer, nullable=False)
